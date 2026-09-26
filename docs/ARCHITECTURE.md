@@ -163,14 +163,12 @@ everything the session page shows, entirely client-side:
 1. Every frame, it computes four joint angles via `lib/poseMath.js`: knee
    (hip-knee-ankle), elbow (shoulder-elbow-wrist), shoulder/arm-raise
    (hip-shoulder-elbow), and hip-flexion (knee-hip-shoulder).
-2. It classifies the exercise from which angle has the largest swing over a
-   ~1s rolling window — squat (knee), jumping_jack (shoulder), crunch
-   (hip-flexion), or bicep_curl/push_up (elbow, disambiguated by torso
-   orientation: horizontal => push-up). This covers 5 exercises by design —
-   see the caveats in the hook's own doc comment (and the calibration
-   source below) before adding a 6th one that doesn't reduce to "one joint
-   angle swings between extended and bent."
-   Thresholds are calibrated against the validated values in
+2. It classifies which of 5 exercises is happening — squat (knee),
+   jumping_jack (shoulder), crunch (hip-flexion), or bicep_curl/push_up
+   (elbow, disambiguated by torso orientation: horizontal => push-up). See
+   the hook's own doc comment before adding a 6th one that doesn't reduce
+   to "one joint angle swings between extended and bent." Thresholds are
+   calibrated against the validated values in
    [Pushtogithub23/Tracking-Physical-Activities-with-MediaPipe-and-OpenCV](https://github.com/Pushtogithub23/Tracking-Physical-Activities-with-MediaPipe-and-OpenCV),
    widened in a few spots for jitter resistance on a live feed. Bench press
    from that repo isn't included — it assumes an overhead camera looking
@@ -178,17 +176,58 @@ everything the session page shows, entirely client-side:
    front-facing standing webcam; its step-counting and jump-rope trackers
    aren't muscle-targeted exercises either, so they don't fit the LOAD
    heatmap this hook feeds.
-3. `lib/repCounter.js`'s generic up/down state machine counts reps per
-   exercise (mirrors `backend/app/pose_engine/rep_counter.py`).
-4. **Switching exercises wipes the heatmap** — the score map resets to
-   empty whenever the detected exercise changes, so a set of curls right
-   after squats doesn't show fading quad/glute color blended with fresh
-   bicep color. Within one exercise, every completed rep adds LOAD points
-   to that exercise's muscles via `lib/muscleMap.js`'s weight table (capped
-   at 100, decaying slowly when idle) — so the heatmap reflects accumulated
-   effort for the *current* exercise, matching `@musclemap/react`'s LOAD
-   color model. `MuscleHeatmap.jsx` renders that score map directly.
-5. The same landmark stream feeds a simple velocity/acceleration estimate
+3. **Classification is sticky, via an active/resting phase state machine —
+   this is what kills flicker.** Once an exercise is active, every
+   subsequent frame only asks "is *this* exercise's own angle still
+   swinging enough?" — it never re-compares against the other 3 candidates
+   mid-set. All 4 candidates are only re-scanned when coming out of rest.
+   Without this, a couple of frames where one candidate's rolling window
+   still held residual range from the previous rep (or the tail of the
+   previous exercise) could steal the classification for a frame or two,
+   which read as the exercise label flickering between labels.
+4. When the active exercise's own range finally drops below the
+   swing-detection threshold, the set is over: `lib/repCounter.js`'s
+   up/down state machine's final rep count is logged into `completedSets`
+   (see below), the muscle heatmap wipes, and the hook enters `resting`
+   with a stopwatch (`RepCounter.jsx` switches from showing rep count to
+   showing elapsed rest time). The stopwatch ticks on its own `setInterval`
+   rather than off the pose-detection framerate, so it keeps counting even
+   if MediaPipe stops producing frames (e.g. the person steps out of frame).
+   **Every time an exercise resumes from rest — even the same exercise as
+   before — its rep counter restarts at 0.** A "set" is exactly one
+   continuous burst of activity between two rest periods.
+5. **Entering activity is guarded too, but not by a timer or a windowed
+   range check.** A candidate detected while resting becomes `pending`, not
+   immediately `active`, and the UI keeps showing Resting until it's
+   confirmed. Confirmation fires the instant the candidate's angle actually
+   reaches that exercise's genuine range of motion (`EXERTION_STATE` in the
+   hook — a real knee bend past 100°, a real elbow curl past 30°, arms
+   actually raised for a jack), not merely "moved more than a noise
+   threshold." A generic "has this been swinging for N ms" check was tried
+   first and didn't work: it can't tell a brief incidental movement (a hand
+   twitch, adjusting stance) from the first half of a real rep, since both
+   look identical to a windowed range check for as long as the window still
+   remembers the swing — and shrinking the window to make twitches decay
+   faster broke real reps instead, misreading the natural near-zero-
+   velocity moment at the top/bottom of every rep as "stopped." Tying
+   confirmation to a concrete milestone side-steps both failure modes.
+   `CONFIRM_DELAY_MS` is a ceiling, not a wait: if a candidate never reaches
+   that genuine range within it, it's discarded entirely (including any rep
+   it was silently counting), as if it never happened.
+6. **Set tracking infrastructure:** each closed set (`{exerciseName, reps,
+   completedAt}`) is appended to `completedSets`, which `WorkoutSession.jsx`
+   watches and persists via `POST /api/workouts/:id/sets` — the endpoint
+   already existed on the backend but nothing called it until now.
+   `SetHistory.jsx` renders that same list locally as a quick "sets this
+   session" readout. This is intentionally minimal (no editing, no set
+   targets/goals yet) — a foundation for a real sets UI on the History
+   page, not the whole feature.
+7. Within one exercise, every completed rep adds LOAD points to that
+   exercise's muscles via `lib/muscleMap.js`'s weight table (capped at 100,
+   decaying slowly when idle) — so the heatmap reflects accumulated effort
+   for the *current set*, matching `@musclemap/react`'s LOAD color model.
+   `MuscleHeatmap.jsx` renders that score map directly.
+8. The same landmark stream feeds a simple velocity/acceleration estimate
    (position delta / time, EMA-smoothed) shown as "Speed" / "Peak accel" in
    the sidebar — relative units (fraction of frame size per second), not
    calibrated to real-world meters. See the hook's doc comment for why.

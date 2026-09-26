@@ -4,6 +4,7 @@ import CameraFeed from '../components/CameraFeed.jsx'
 import MetricsSidebar from '../components/MetricsSidebar.jsx'
 import MuscleHeatmap from '../components/MuscleHeatmap.jsx'
 import RepCounter from '../components/RepCounter.jsx'
+import SetHistory from '../components/SetHistory.jsx'
 import { useAuth } from '../auth/AuthContext.jsx'
 import { useCamera } from '../hooks/useCamera.js'
 import { useExerciseTracker } from '../hooks/useExerciseTracker.js'
@@ -16,7 +17,8 @@ export default function WorkoutSession() {
   const { videoRef, stream, ready } = useCamera()
   const [paused, setPaused] = useState(false)
   const landmarks = usePoseDetection(videoRef, { running: ready && !paused })
-  const { exerciseName, reps, scores, speed, peakAcceleration, reset } = useExerciseTracker(landmarks)
+  const { phase, exerciseName, reps, scores, speed, peakAcceleration, restElapsedMs, completedSets, reset } =
+    useExerciseTracker(landmarks)
   const [sessionId, setSessionId] = useState(null)
   const [vitals, setVitals] = useState([])
 
@@ -38,6 +40,17 @@ export default function WorkoutSession() {
     }, 5000)
     return () => clearInterval(interval)
   }, [sessionId])
+
+  // Persist each completed set as it closes (see useExerciseTracker's
+  // resting-phase transition) through the existing set-logging endpoint.
+  useEffect(() => {
+    if (!sessionId || completedSets.length === 0) return
+    const latest = completedSets[completedSets.length - 1]
+    api.post(`/workouts/${sessionId}/sets`, {
+      exercise_name: latest.exerciseName,
+      reps: latest.reps,
+    })
+  }, [sessionId, completedSets.length])
 
   function handleEndSession() {
     if (sessionId) api.post(`/workouts/${sessionId}/end`)
@@ -68,7 +81,10 @@ export default function WorkoutSession() {
         <div className="flex flex-1 flex-col gap-4">
           <CameraFeed videoRef={videoRef} />
           <div className="grid gap-4 sm:grid-cols-[auto_1fr] sm:items-start">
-            <RepCounter exerciseName={exerciseName} reps={reps} />
+            <div className="flex flex-col gap-4">
+              <RepCounter phase={phase} exerciseName={exerciseName} reps={reps} restElapsedMs={restElapsedMs} />
+              <SetHistory sets={completedSets} />
+            </div>
             <MuscleHeatmap scores={scores} />
           </div>
         </div>
