@@ -13,7 +13,8 @@ gated behind Auth0 login.
 - **Auth:** Auth0
 - **Body tracking:** MediaPipe Pose (client-side, real-time) + OpenCV/MediaPipe-Python (server-side, optional)
 - **Vitals:** Presage Technologies (SmartSpectra / Physiology REST API)
-- **Muscle group UI:** react-body-highlighter
+- **Muscle group UI:** [@musclemap/react](https://github.com/Jsplice/MuscleMap) — live LOAD heatmap
+- **Design:** "Liquid glass" — frosted translucent cards over a gradient background
 
 ## Docs
 

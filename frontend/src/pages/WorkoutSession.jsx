@@ -1,26 +1,22 @@
 import { useEffect, useState } from 'react'
 
 import CameraFeed from '../components/CameraFeed.jsx'
-import MuscleBodyMap from '../components/MuscleBodyMap.jsx'
+import MetricsSidebar from '../components/MetricsSidebar.jsx'
+import MuscleHeatmap from '../components/MuscleHeatmap.jsx'
 import RepCounter from '../components/RepCounter.jsx'
-import VitalsPanel from '../components/VitalsPanel.jsx'
 import { useAuth } from '../auth/AuthContext.jsx'
 import { useCamera } from '../hooks/useCamera.js'
+import { useExerciseTracker } from '../hooks/useExerciseTracker.js'
 import { usePoseDetection } from '../hooks/usePoseDetection.js'
 import { useVitalsUpload } from '../hooks/useVitalsUpload.js'
 import { api, attachAuthToken } from '../services/api.js'
 
-// Placeholder — swap for the real angle-based counter the CV lead builds
-// on top of the landmarks returned by usePoseDetection (see
-// backend/app/pose_engine/rep_counter.py for the matching angle math).
-function countReps() {
-  return 0
-}
-
 export default function WorkoutSession() {
   const { isAuthenticated, getAccessTokenSilently, configured } = useAuth()
   const { videoRef, stream, ready } = useCamera()
-  const landmarks = usePoseDetection(videoRef, { running: ready })
+  const [paused, setPaused] = useState(false)
+  const landmarks = usePoseDetection(videoRef, { running: ready && !paused })
+  const { exerciseName, reps, scores, speed, peakAcceleration, reset } = useExerciseTracker(landmarks)
   const [sessionId, setSessionId] = useState(null)
   const [vitals, setVitals] = useState([])
 
@@ -43,23 +39,39 @@ export default function WorkoutSession() {
     return () => clearInterval(interval)
   }, [sessionId])
 
-  const repCount = landmarks ? countReps(landmarks) : 0
+  function handleEndSession() {
+    if (sessionId) api.post(`/workouts/${sessionId}/end`)
+    reset()
+    setPaused(true)
+  }
 
   return (
-    <div className="mx-auto grid max-w-5xl gap-4 p-4 md:grid-cols-3">
+    <div className="mx-auto max-w-6xl p-4 md:p-8">
       {!configured && (
-        <p className="rounded-xl bg-amber-500/10 p-3 text-sm text-amber-300 md:col-span-3">
+        <p className="mb-4 rounded-2xl border border-amber-300/30 bg-amber-500/10 p-3 text-sm text-amber-200">
           Log in requires Auth0 to be configured (see docs/SETUP.md). Workout sessions won't save
-          until then, but the camera + pose preview below still works.
+          until then, but the camera + live tracking below still works.
         </p>
       )}
-      <div className="md:col-span-2">
-        <CameraFeed videoRef={videoRef} />
-      </div>
-      <div className="flex flex-col gap-4">
-        <RepCounter exerciseName="Squat" reps={repCount} />
-        <MuscleBodyMap activeMuscles={['quadriceps', 'gluteal']} />
-        <VitalsPanel vitals={vitals} />
+      <div className="flex flex-col gap-4 md:flex-row">
+        <MetricsSidebar
+          vitals={vitals}
+          reps={reps}
+          speed={speed}
+          peakAcceleration={peakAcceleration}
+          isPaused={paused}
+          onTogglePause={() => setPaused((p) => !p)}
+          onReset={reset}
+          onEndSession={handleEndSession}
+        />
+
+        <div className="flex flex-1 flex-col gap-4">
+          <CameraFeed videoRef={videoRef} />
+          <div className="grid gap-4 sm:grid-cols-[auto_1fr] sm:items-start">
+            <RepCounter exerciseName={exerciseName} reps={reps} />
+            <MuscleHeatmap scores={scores} />
+          </div>
+        </div>
       </div>
     </div>
   )

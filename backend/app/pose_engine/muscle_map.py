@@ -1,20 +1,22 @@
 """Maps exercise names to the muscle groups they primarily train.
 
-Keys match the muscle labels used by the react-body-highlighter component
-on the frontend (see frontend/src/components/MuscleBodyMap.jsx) so a
-detected exercise name can flow straight into the body map with no
-translation layer in between.
+Keys use @musclemap/core's `MuscleGroup` enum names (see
+frontend/src/lib/muscleMap.js, the weighted client-side counterpart used to
+drive the live heatmap) so an ExerciseSet logged here and a heatmap frame
+rendered on the frontend always agree on what a muscle is called.
 """
 
 EXERCISE_MUSCLE_MAP = {
-    "squat": ["quadriceps", "gluteal", "hamstring"],
-    "push_up": ["chest", "triceps", "front-deltoids"],
-    "pull_up": ["upper-back", "biceps", "back-deltoids"],
-    "bicep_curl": ["biceps"],
-    "shoulder_press": ["front-deltoids", "triceps"],
-    "deadlift": ["hamstring", "gluteal", "lower-back"],
-    "lunge": ["quadriceps", "gluteal"],
-    "plank": ["abs", "obliques"],
+    "squat": ["QUADS", "GLUTES", "HAMSTRINGS"],
+    "push_up": ["CHEST", "TRICEPS", "SHOULDERS_FRONT", "CORE"],
+    "pull_up": ["LATS", "BICEPS", "SHOULDERS_REAR"],
+    "bicep_curl": ["BICEPS", "FOREARMS"],
+    "shoulder_press": ["SHOULDERS_FRONT", "TRICEPS"],
+    "deadlift": ["HAMSTRINGS", "GLUTES", "BACK_LOWER"],
+    "lunge": ["QUADS", "GLUTES"],
+    "plank": ["CORE", "OBLIQUES"],
+    "jumping_jack": ["SHOULDERS_SIDE", "CALVES", "CORE"],
+    "crunch": ["CORE", "OBLIQUES"],
 }
 
 

@@ -11,7 +11,8 @@
 | Live body tracking | MediaPipe Pose (BlazePose), running client-side via `@mediapipe/tasks-vision` | Real-time (30fps+) in the browser, no server round trip |
 | Video capture / server-side CV | OpenCV (`opencv-python-headless`) + `mediapipe` (Python) | Decodes frames, available for server-side spot-checks or recorded-clip analysis |
 | Exercise vitals (HR, breathing) | Presage Technologies SmartSpectra (Physiology REST API) | Contactless vitals from camera video |
-| Muscle group UI | `react-body-highlighter` | Purpose-built SVG body model with per-muscle highlighting |
+| Muscle group UI | [`@musclemap/react`](https://github.com/Jsplice/MuscleMap) | 0-100 per-muscle LOAD heatmap (front+back SVG bodies), not just a binary highlight |
+| UI style | "Liquid glass" — frosted `bg-white/10 backdrop-blur-xl` cards over a gradient background | Matches the reference design the team picked; see [Design](#design-liquid-glass) |
 
 ## The core design problem: one camera, two consumers
 
@@ -91,7 +92,7 @@ backend/
     pose_engine/
       pose_estimator.py           # OpenCV decode + MediaPipe Pose (server-side)
       rep_counter.py                # joint-angle state machine
-      muscle_map.py                  # exercise name -> muscle groups
+      muscle_map.py                  # exercise name -> muscle groups (MuscleGroup enum names)
   sql/
     create_hypertable.sql            # run once against TigerData
   tests/
@@ -106,22 +107,28 @@ SQLite database and dummy Auth0 settings (`tests/test_health.py`).
 ```
 src/
   main.jsx                  # mounts <App/> inside BrowserRouter + AppAuthProvider
-  App.jsx                    # nav, routes, login/logout button
+  App.jsx                    # gradient background, glass nav, routes, login/logout button
   auth/
     AuthContext.jsx           # useAuth() — safe no-op default if Auth0 isn't configured
     Auth0ProviderWithNavigate.jsx  # wraps Auth0Provider, bridges into AuthContext
+  lib/
+    poseMath.js                # landmark indices, angle-at-a-joint math, EMA smoothing
+    repCounter.js                # generic angle-based rep state machine (up/down)
+    muscleMap.js                   # exercise -> { MUSCLE_GROUP: weight } for the heatmap
   hooks/
-    useCamera.js                # the single getUserMedia() call (see above)
-    usePoseDetection.js           # MediaPipe PoseLandmarker on the shared stream
-    useVitalsUpload.js              # MediaRecorder chunks -> backend -> Presage
+    useCamera.js                     # the single getUserMedia() call (see above)
+    usePoseDetection.js                # MediaPipe PoseLandmarker on the shared stream
+    useExerciseTracker.js                # landmarks -> exercise/reps/muscle LOAD scores/speed
+    useVitalsUpload.js                     # MediaRecorder chunks -> backend -> Presage
   components/
-    CameraFeed.jsx                 # <video> element
-    MuscleBodyMap.jsx                # react-body-highlighter wrapper
-    RepCounter.jsx                    # big number + exercise name
-    VitalsPanel.jsx                     # HR / breathing / HRV tiles
+    CameraFeed.jsx                 # <video> element, glass frame
+    MuscleHeatmap.jsx                # @musclemap/react wrapper (LOAD color model)
+    GaugeRing.jsx                      # SVG ring gauge (heart rate zone, rep goal)
+    MetricsSidebar.jsx                   # left sidebar: gauges, stat pills, quick actions
+    RepCounter.jsx                         # big number + exercise name
   pages/
     Dashboard.jsx                       # landing page
-    WorkoutSession.jsx                    # wires camera + pose + vitals + UI together
+    WorkoutSession.jsx                    # wires camera + pose + tracker + sidebar together
     History.jsx                             # placeholder for past sessions
   services/
     api.js                                   # axios instance + auth-token interceptor
@@ -138,8 +145,8 @@ need to special-case "Auth0 isn't set up yet" beyond checking that flag.
 - **WorkoutSession** — one per workout (start/end timestamps).
 - **ExerciseSet** — one row per logged set: exercise name, rep count, form
   score, and the muscle groups it trains (looked up via
-  `pose_engine/muscle_map.py` so the same list of muscle names is used by
-  both the DB and the `MuscleBodyMap` UI).
+  `pose_engine/muscle_map.py`, using the same `MuscleGroup` enum names as
+  `@musclemap/react` on the frontend).
 - **VitalsReading** — one row per Presage sample (heart rate, breathing
   rate, HRV). This is the time-series table: `backend/sql/create_hypertable.sql`
   turns it into a TimescaleDB hypertable partitioned on `recorded_at`. Note
@@ -147,6 +154,57 @@ need to special-case "Auth0 isn't set up yet" beyond checking that flag.
   `backend/app/models/vitals.py` — Timescale requires the partitioning
   column to be part of every unique/primary-key constraint on a hypertable,
   so a plain auto-increment `id` alone won't work once it's converted.
+
+## Live exercise tracking & the muscle heatmap
+
+`useExerciseTracker.js` (frontend) turns the raw MediaPipe landmarks into
+everything the session page shows, entirely client-side:
+
+1. Every frame, it computes four joint angles via `lib/poseMath.js`: knee
+   (hip-knee-ankle), elbow (shoulder-elbow-wrist), shoulder/arm-raise
+   (hip-shoulder-elbow), and hip-flexion (knee-hip-shoulder).
+2. It classifies the exercise from which angle has the largest swing over a
+   ~1s rolling window — squat (knee), jumping_jack (shoulder), crunch
+   (hip-flexion), or bicep_curl/push_up (elbow, disambiguated by torso
+   orientation: horizontal => push-up). This covers 5 exercises by design —
+   see the caveats in the hook's own doc comment (and the calibration
+   source below) before adding a 6th one that doesn't reduce to "one joint
+   angle swings between extended and bent."
+   Thresholds are calibrated against the validated values in
+   [Pushtogithub23/Tracking-Physical-Activities-with-MediaPipe-and-OpenCV](https://github.com/Pushtogithub23/Tracking-Physical-Activities-with-MediaPipe-and-OpenCV),
+   widened in a few spots for jitter resistance on a live feed. Bench press
+   from that repo isn't included — it assumes an overhead camera looking
+   down at someone lying on a bench, a different physical setup than a
+   front-facing standing webcam; its step-counting and jump-rope trackers
+   aren't muscle-targeted exercises either, so they don't fit the LOAD
+   heatmap this hook feeds.
+3. `lib/repCounter.js`'s generic up/down state machine counts reps per
+   exercise (mirrors `backend/app/pose_engine/rep_counter.py`).
+4. **Switching exercises wipes the heatmap** — the score map resets to
+   empty whenever the detected exercise changes, so a set of curls right
+   after squats doesn't show fading quad/glute color blended with fresh
+   bicep color. Within one exercise, every completed rep adds LOAD points
+   to that exercise's muscles via `lib/muscleMap.js`'s weight table (capped
+   at 100, decaying slowly when idle) — so the heatmap reflects accumulated
+   effort for the *current* exercise, matching `@musclemap/react`'s LOAD
+   color model. `MuscleHeatmap.jsx` renders that score map directly.
+5. The same landmark stream feeds a simple velocity/acceleration estimate
+   (position delta / time, EMA-smoothed) shown as "Speed" / "Peak accel" in
+   the sidebar — relative units (fraction of frame size per second), not
+   calibrated to real-world meters. See the hook's doc comment for why.
+
+## Design: "Liquid Glass"
+
+The UI follows a frosted-glass look: `bg-white/10 backdrop-blur-xl border
+border-white/20` cards over a `from-indigo-950 via-violet-900
+to-fuchsia-900` gradient background, white text, rounded-full nav/buttons,
+and `GaugeRing.jsx` ring gauges for at-a-glance percentages (heart-rate
+zone, rep-goal progress). All metrics — gauges, stat pills, and the
+Reset/Pause/History/End quick actions — live in `MetricsSidebar.jsx` on the
+left; the camera feed, rep counter, and muscle heatmap fill the rest of the
+page. Extending the look (new pages, new cards) means reusing that same
+`rounded-3xl border border-white/20 bg-white/10 shadow-lg backdrop-blur-xl`
+combination rather than introducing a second style.
 
 ## Auth flow
 

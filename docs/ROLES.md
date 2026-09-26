@@ -60,9 +60,11 @@ one file both of them depend on.
 
 - Turn the placeholder pages (`Dashboard.jsx`, `History.jsx`,
   `WorkoutSession.jsx`) into the real demo flow.
-- Wire `RepCounter`, `MuscleBodyMap`, and `VitalsPanel` to real data from
-  roles #2 and #3 as it becomes available (they currently take props, so
-  this should be a drop-in).
+- Extend `MetricsSidebar.jsx` / `RepCounter.jsx` / `MuscleHeatmap.jsx` with
+  real data from roles #2 and #3 as it becomes available (they take props,
+  so this should be additive) — keep new UI in the same "liquid glass" card
+  style (`rounded-3xl border border-white/20 bg-white/10 backdrop-blur-xl`,
+  see docs/ARCHITECTURE.md's Design section).
 - Test on an actual phone early — camera permissions, layout at narrow
   widths, and touch targets are easy to get wrong late.
 - Own visual polish: loading states, empty states, error states (e.g. "no
