@@ -1,12 +1,14 @@
 from datetime import datetime, timedelta, timezone
 
-from flask import Blueprint, jsonify, request
+import requests
+from flask import Blueprint, current_app, jsonify, request
 
 from ..auth.decorators import requires_auth
 from ..extensions import db
-from ..models import VitalsReading, WorkoutSession
+from ..models import VitalsReading
 from ..services import presage_client
 from ..timeutil import parse_timestamp
+from .access import owned_session_or_404
 
 vitals_bp = Blueprint("vitals", __name__)
 
@@ -24,7 +26,7 @@ def upload_chunk(session_id: int):
     `duration_sec` say when the clip was filmed. Without them the clip is
     assumed to have just ended when the upload arrived."""
     received_at = datetime.now(timezone.utc)  # before Presage, which can take ~30s
-    WorkoutSession.query.get_or_404(session_id)
+    owned_session_or_404(session_id)
 
     if "chunk" not in request.files:
         return jsonify({"error": "multipart field 'chunk' is required"}), 400
@@ -37,8 +39,18 @@ def upload_chunk(session_id: int):
     if clip_started_at is None:
         clip_started_at = received_at - timedelta(seconds=window_sec)
 
+    if not current_app.config["PRESAGE_API_KEY"]:
+        return jsonify({"error": "Presage isn't configured (PRESAGE_API_KEY), so no heart rate was measured"}), 503
+
     file = request.files["chunk"]
-    results = presage_client.analyze_video_chunk(file.read(), content_type=file.mimetype)
+    file_bytes = file.read()
+    # Presage can take ~30s; give the database connection back to the pool
+    # instead of holding it (idle, mid-transaction) while waiting.
+    db.session.close()
+    try:
+        results = presage_client.analyze_video_chunk(file_bytes, content_type=file.mimetype)
+    except (requests.RequestException, presage_client.PresageError, KeyError, ValueError) as err:
+        return jsonify({"error": f"Presage request failed: {err}"}), 502
 
     reading = VitalsReading(
         session_id=session_id,
@@ -56,6 +68,7 @@ def upload_chunk(session_id: int):
 @vitals_bp.get("/<int:session_id>")
 @requires_auth
 def list_vitals(session_id: int):
+    owned_session_or_404(session_id)
     readings = (
         VitalsReading.query.filter_by(session_id=session_id)
         .order_by(VitalsReading.recorded_at.desc())

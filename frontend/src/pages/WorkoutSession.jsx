@@ -69,20 +69,46 @@ export default function WorkoutSession() {
   useEffect(() => {
     if (!sessionId) return undefined
     const interval = setInterval(() => {
-      api.get(`/vitals/${sessionId}`).then((res) => setVitals(res.data))
+      api
+        .get(`/vitals/${sessionId}`)
+        .then((res) => setVitals(res.data))
+        .catch(() => {}) // keep the last readings; the next poll retries
     }, 5000)
     return () => clearInterval(interval)
   }, [sessionId])
 
+  // Returns the request's promise (or null) so ending can wait for it.
   function saveSet(set) {
-    if (!sessionId || !set) return
-    api.post(`/workouts/${sessionId}/sets`, {
-      exercise_name: set.exerciseName,
-      reps: set.reps,
-      // Averaged per-rep movement quality (see lib/repQuality.js).
-      ...set.quality,
-    })
+    if (!sessionId || !set) return null
+    return api
+      .post(`/workouts/${sessionId}/sets`, {
+        exercise_name: set.exerciseName,
+        reps: set.reps,
+        // Averaged per-rep movement quality (see lib/repQuality.js).
+        ...set.quality,
+      })
+      .catch((err) => console.error('could not save set', err))
   }
+
+  // Ends the workout once: saves a set still in progress, waits for it to
+  // land, then marks the session ended, so the end time comes after the
+  // last set and the workout isn't left "active".
+  const ended = useRef(false)
+  async function finishSession() {
+    if (!sessionId || ended.current) return
+    ended.current = true
+    await saveSet(closeSet())
+    await api.post(`/workouts/${sessionId}/end`).catch((err) => console.error('could not end workout', err))
+  }
+
+  // Leaving the page (Back button, another route) ends the workout too.
+  // Through a ref so the cleanup always calls the latest finishSession.
+  const finishRef = useRef(finishSession)
+  finishRef.current = finishSession
+  useEffect(() => {
+    if (!sessionId) return undefined
+    return () => finishRef.current()
+  }, [sessionId])
 
   // Persist each completed set as it closes (see useExerciseTracker's
   // resting-phase transition) through the existing set-logging endpoint.
@@ -101,8 +127,7 @@ export default function WorkoutSession() {
   }
 
   function handleEndSession() {
-    saveSet(closeSet())
-    if (sessionId) api.post(`/workouts/${sessionId}/end`)
+    finishSession() // closes and saves the in-progress set before reset() below
     reset()
     setPaused(true)
   }

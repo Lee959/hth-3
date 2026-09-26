@@ -9,8 +9,12 @@ from ..models import ExerciseSet, RepEvent, User, VitalsReading, WorkoutSession
 from ..pose_engine.muscle_map import muscles_for
 from ..services import effort
 from ..timeutil import parse_timestamp
+from .access import owned_session_or_404
 
 workouts_bp = Blueprint("workouts", __name__)
+
+SET_SCORE_FIELDS = ("form_score", "range_of_motion", "symmetry", "avg_rep_seconds")
+REP_SCORE_FIELDS = ("range_of_motion", "symmetry", "tempo_score", "rep_seconds", "form_score")
 
 
 def _get_or_create_user() -> User:
@@ -22,6 +26,51 @@ def _get_or_create_user() -> User:
         db.session.add(user)
         db.session.commit()
     return user
+
+
+def _aware(dt):
+    """Treat naive datetimes (SQLite in tests) as UTC so they compare with aware ones."""
+    return dt.replace(tzinfo=timezone.utc) if dt is not None and dt.tzinfo is None else dt
+
+
+def _mark_ended(session, ended_at):
+    session.ended_at = max(_aware(ended_at), _aware(session.started_at))
+    session.duration_sec = round((session.ended_at - _aware(session.started_at)).total_seconds())
+    session.status = "ended"
+
+
+def _last_activity(session):
+    """The latest moment anything was recorded for a workout, or None."""
+    last_set = (
+        db.session.query(db.func.max(db.func.coalesce(ExerciseSet.ended_at, ExerciseSet.recorded_at)))
+        .filter(ExerciseSet.session_id == session.id)
+        .scalar()
+    )
+    last_vitals = (
+        db.session.query(db.func.max(VitalsReading.recorded_at))
+        .filter(VitalsReading.session_id == session.id)
+        .scalar()
+    )
+    times = [_aware(t) for t in (last_set, last_vitals) if t is not None]
+    return max(times) if times else None
+
+
+def _close_abandoned_sessions(user):
+    """Workouts left without pressing End (tab closed, app crashed) would
+    stay 'active' forever. Each one is ended at its last recorded activity,
+    or deleted if nothing was recorded at all."""
+    for session in WorkoutSession.query.filter_by(user_id=user.id, status="active").all():
+        last = _last_activity(session)
+        if last is None:
+            db.session.delete(session)
+        else:
+            _mark_ended(session, last)
+
+
+def _user_workouts(user):
+    """The user's workouts that have at least one set. One opened and left
+    with nothing done isn't a workout, so history and totals skip it."""
+    return WorkoutSession.query.filter_by(user_id=user.id).filter(WorkoutSession.exercise_sets.any())
 
 
 MAX_HISTORY_PAGE = 500
@@ -41,7 +90,7 @@ def list_sessions():
     if user is None:
         return jsonify([]), 200, {"X-Total-Count": "0"}
 
-    query = WorkoutSession.query.filter_by(user_id=user.id)
+    query = _user_workouts(user)
     total = query.count()
     sessions = (
         query.options(selectinload(WorkoutSession.exercise_sets))
@@ -81,7 +130,7 @@ def summary():
     scores per session for trend lines."""
     user = User.query.filter_by(auth0_sub=g.current_user_sub).first()
     sessions = (
-        WorkoutSession.query.filter_by(user_id=user.id)
+        _user_workouts(user)
         .options(selectinload(WorkoutSession.exercise_sets))
         .order_by(WorkoutSession.started_at)
         .all()
@@ -190,20 +239,21 @@ def summary():
 def _client_time(field: str):
     """Optional client-side timestamp from the JSON body (the moment the
     user pressed Start/End); None if not sent. Raises ValueError if bad."""
-    body = request.get_json(silent=True) or {}
-    return parse_timestamp(body.get(field))
+    body = request.get_json(silent=True)
+    return parse_timestamp(body.get(field)) if isinstance(body, dict) else None
 
 
 @workouts_bp.post("/")
 @requires_auth
 def start_session():
     """Starts a workout. Optional body: {"started_at": ISO 8601 | epoch ms};
-    defaults to now."""
+    defaults to now. Any workout the user left open is closed first."""
     try:
         started_at = _client_time("started_at") or datetime.now(timezone.utc)
     except ValueError:
         return jsonify({"error": "started_at must be ISO 8601 or epoch ms"}), 400
     user = _get_or_create_user()
+    _close_abandoned_sessions(user)
     session = WorkoutSession(user_id=user.id, started_at=started_at)
     db.session.add(session)
     db.session.commit()
@@ -216,18 +266,61 @@ def end_session(session_id: int):
     """Ends a workout and records its duration. Optional body:
     {"ended_at": ISO 8601 | epoch ms}; defaults to now. Ending an
     already-ended workout returns it unchanged."""
-    session = WorkoutSession.query.get_or_404(session_id)
+    session = owned_session_or_404(session_id)
     if session.status == "ended":
         return jsonify(session.to_dict())
     try:
         ended_at = _client_time("ended_at") or datetime.now(timezone.utc)
     except ValueError:
         return jsonify({"error": "ended_at must be ISO 8601 or epoch ms"}), 400
-    session.ended_at = max(ended_at, session.started_at)
-    session.duration_sec = round((session.ended_at - session.started_at).total_seconds())
-    session.status = "ended"
+    _mark_ended(session, ended_at)
     db.session.commit()
     return jsonify(session.to_dict())
+
+
+def _number(value, field):
+    """A JSON number or null -> float or None; anything else is rejected."""
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"{field} must be a number")
+    return float(value)
+
+
+def _timestamp(value, field):
+    try:
+        return parse_timestamp(value)
+    except ValueError:
+        raise ValueError(f"{field} must be ISO 8601 or epoch milliseconds") from None
+
+
+def _parse_set(body):
+    """Validates a set-logging body; raises ValueError with a message for the client."""
+    if not isinstance(body, dict):
+        raise ValueError("body must be a JSON object")
+    name = body.get("exercise_name")
+    if not isinstance(name, str) or not name.strip():
+        raise ValueError("exercise_name is required")
+    reps = body.get("reps", 0)
+    if isinstance(reps, bool) or not isinstance(reps, int) or reps < 0:
+        raise ValueError("reps must be a whole number, 0 or more")
+    rep_events = body.get("rep_events") or []
+    if not isinstance(rep_events, list) or not all(isinstance(r, dict) for r in rep_events):
+        raise ValueError("rep_events must be a list of objects")
+    return {
+        "exercise_name": name.strip(),
+        "reps": reps,
+        **{field: _number(body.get(field), field) for field in SET_SCORE_FIELDS},
+        "started_at": _timestamp(body.get("started_at"), "started_at"),
+        "ended_at": _timestamp(body.get("ended_at"), "ended_at"),
+        "rep_events": [
+            {
+                "recorded_at": _timestamp(rep.get("recorded_at"), "rep_events[].recorded_at"),
+                **{field: _number(rep.get(field), f"rep_events[].{field}") for field in REP_SCORE_FIELDS},
+            }
+            for rep in rep_events
+        ],
+    }
 
 
 @workouts_bp.post("/<int:session_id>/sets")
@@ -236,46 +329,26 @@ def log_set(session_id: int):
     """Logs one completed set, plus (optionally) its individually scored reps
     as `rep_events`: a list of {recorded_at, range_of_motion, symmetry,
     tempo_score, rep_seconds, form_score}, in rep order."""
-    WorkoutSession.query.get_or_404(session_id)
-    body = request.get_json(force=True) or {}
-    exercise_name = body.get("exercise_name", "")
-
+    owned_session_or_404(session_id)
     try:
-        started_at = parse_timestamp(body.get("started_at"))
-        ended_at = parse_timestamp(body.get("ended_at"))
-        reps_in = [(parse_timestamp(rep.get("recorded_at")), rep) for rep in body.get("rep_events") or []]
-    except (ValueError, AttributeError):
-        return jsonify({"error": "timestamps must be ISO 8601 or epoch ms; rep_events must be objects"}), 400
+        data = _parse_set(request.get_json(silent=True))
+    except ValueError as err:
+        return jsonify({"error": str(err)}), 400
 
-    exercise_set = ExerciseSet(
-        session_id=session_id,
-        exercise_name=exercise_name,
-        muscle_groups=muscles_for(exercise_name),
-        reps=body.get("reps", 0),
-        form_score=body.get("form_score"),
-        range_of_motion=body.get("range_of_motion"),
-        symmetry=body.get("symmetry"),
-        avg_rep_seconds=body.get("avg_rep_seconds"),
-        started_at=started_at,
-        ended_at=ended_at,
-    )
+    rep_events = data.pop("rep_events")
+    exercise_set = ExerciseSet(session_id=session_id, muscle_groups=muscles_for(data["exercise_name"]), **data)
     db.session.add(exercise_set)
     db.session.flush()  # assigns exercise_set.id for the reps below
 
-    fallback_time = ended_at or datetime.now(timezone.utc)
-    for number, (recorded_at, rep) in enumerate(reps_in, start=1):
+    fallback_time = data["ended_at"] or datetime.now(timezone.utc)
+    for number, rep in enumerate(rep_events, start=1):
         db.session.add(
             RepEvent(
                 session_id=session_id,
                 set_id=exercise_set.id,
-                exercise_name=exercise_name,
+                exercise_name=data["exercise_name"],
                 rep_number=number,
-                recorded_at=recorded_at or fallback_time,
-                range_of_motion=rep.get("range_of_motion"),
-                symmetry=rep.get("symmetry"),
-                tempo_score=rep.get("tempo_score"),
-                rep_seconds=rep.get("rep_seconds"),
-                form_score=rep.get("form_score"),
+                **{**rep, "recorded_at": rep["recorded_at"] or fallback_time},
             )
         )
     db.session.commit()
@@ -288,7 +361,7 @@ def get_session(session_id: int):
     """One workout in full, for its summary / history detail view: the
     session (times, duration, summary scores), its sets, its heart-rate
     readings and its individual reps, each in time order."""
-    session = WorkoutSession.query.get_or_404(session_id)
+    session = owned_session_or_404(session_id)
     sets = ExerciseSet.query.filter_by(session_id=session_id).order_by(ExerciseSet.recorded_at).all()
     vitals = (
         VitalsReading.query.filter_by(session_id=session_id).order_by(VitalsReading.recorded_at).all()
