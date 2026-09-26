@@ -18,6 +18,11 @@ class Config:
     AUTH0_AUDIENCE = os.getenv("AUTH0_AUDIENCE", "")
     AUTH0_ALGORITHMS = [os.getenv("AUTH0_ALGORITHMS", "RS256")]
 
+    # Local development without Auth0: while AUTH0_DOMAIN/AUTH0_AUDIENCE are
+    # unset, every request acts as the user with this auth0_sub (see
+    # auth/decorators.py). Leave empty anywhere shared or deployed.
+    DEV_USER_SUB = os.getenv("DEV_USER_SUB", "")
+
     PRESAGE_API_KEY = os.getenv("PRESAGE_API_KEY", "")
     PRESAGE_API_BASE = os.getenv("PRESAGE_API_BASE", "https://api.physiology.presagetech.com")
 

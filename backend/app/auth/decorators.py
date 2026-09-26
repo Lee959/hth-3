@@ -33,6 +33,12 @@ def requires_auth(fn):
         audience = current_app.config["AUTH0_AUDIENCE"]
 
         if not domain or not audience:
+            # Dev mode: no Auth0 yet, so act as the configured local user.
+            dev_sub = current_app.config.get("DEV_USER_SUB")
+            if dev_sub:
+                g.current_user_sub = dev_sub
+                g.current_user_claims = {"sub": dev_sub}
+                return fn(*args, **kwargs)
             return jsonify({"error": "Auth0 is not configured on the server"}), 500
 
         try:

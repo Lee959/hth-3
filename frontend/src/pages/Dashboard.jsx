@@ -245,26 +245,32 @@ function MovementQualityCard({ movement, rows }) {
   )
 }
 
-function EmptySummary() {
+function EmptySummary({ title, children }) {
   return (
     <div className="liquid-glass mx-auto mt-10 flex max-w-lg flex-col items-center gap-3 rounded-[2rem] px-8 py-12 text-center">
-      <h2 className="font-rajdhani text-2xl font-bold uppercase tracking-wide text-white">No workouts yet</h2>
-      <p className="font-rajdhani font-light text-white/60">
-        Finish your first session and your reps, form, effort and heart rate will add up here.
-      </p>
+      <h2 className="font-rajdhani text-2xl font-bold uppercase tracking-wide text-white">{title}</h2>
+      <p className="font-rajdhani font-light text-white/60">{children}</p>
     </div>
   )
 }
 
 export default function Dashboard() {
-  const { status, summary, isSample } = useWorkoutSummary()
+  const { status, summary } = useWorkoutSummary()
   const loading = status === 'loading'
 
-  if (status === 'ready' && summary?.total_workouts === 0) {
+  if (status === 'signed-out' || (status === 'ready' && summary?.total_workouts === 0)) {
     return (
       <div className="px-4 pb-36 pt-4">
         <HistorySidebar />
-        <EmptySummary />
+        {status === 'signed-out' ? (
+          <EmptySummary title="Log in to see your summary">
+            Your reps, form, effort and heart rate are saved to your account.
+          </EmptySummary>
+        ) : (
+          <EmptySummary title="No workouts yet">
+            Finish your first session and your reps, form, effort and heart rate will add up here.
+          </EmptySummary>
+        )}
         <StartWorkoutDock />
       </div>
     )
@@ -286,16 +292,9 @@ export default function Dashboard() {
       <HistorySidebar />
 
       <header>
-        <div className="flex flex-wrap items-center gap-3">
-          <h1 className="font-rajdhani text-3xl font-bold uppercase tracking-wide text-white md:text-4xl">
-            Your summary
-          </h1>
-          {isSample && (
-            <span className="rounded-full border border-amber-300/25 bg-amber-400/10 px-3 py-1 font-rajdhani text-xs font-semibold uppercase tracking-wide text-amber-100/90">
-              Sample data · log in to see yours
-            </span>
-          )}
-        </div>
+        <h1 className="font-rajdhani text-3xl font-bold uppercase tracking-wide text-white md:text-4xl">
+          Your summary
+        </h1>
         <p className="mt-1 font-rajdhani font-light text-white/60">Every workout, all time.</p>
       </header>
 

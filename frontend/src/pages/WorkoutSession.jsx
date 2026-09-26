@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 
 import CameraFeed from '../components/CameraFeed.jsx'
@@ -48,10 +48,21 @@ export default function WorkoutSession() {
     if (isAuthenticated) attachAuthToken(getAccessTokenSilently)
   }, [isAuthenticated, getAccessTokenSilently])
 
+  // Workouts save when logged in, or in dev mode (no Auth0) as the
+  // backend's demo user (DEV_USER_SUB).
+  const canSave = isAuthenticated || !configured
+  // StrictMode runs effects twice in development; without this guard every
+  // visit would create a second, empty session left "active" forever.
+  const sessionRequested = useRef(false)
+
   useEffect(() => {
-    if (!isAuthenticated) return
-    api.post('/workouts/').then((res) => setSessionId(res.data.id))
-  }, [isAuthenticated])
+    if (!canSave || sessionRequested.current) return
+    sessionRequested.current = true
+    api
+      .post('/workouts/')
+      .then((res) => setSessionId(res.data.id))
+      .catch((err) => console.error('could not start workout session', err))
+  }, [canSave])
 
   useVitalsUpload(stream, sessionId, { enabled: ready && Boolean(sessionId) })
 
@@ -150,8 +161,8 @@ export default function WorkoutSession() {
       <div className="absolute bottom-6 left-1/2 z-10 flex -translate-x-1/2 flex-col items-center gap-3">
         {!configured && (
           <p className="w-[90vw] max-w-sm rounded-2xl border border-amber-300/30 bg-amber-500/20 p-3 text-center text-sm text-amber-100 shadow-lg backdrop-blur-xl">
-            Log in requires Auth0 to be configured (see docs/SETUP.md). Workout sessions won't save
-            until then, but the camera + live tracking below still works.
+            Dev mode: Auth0 isn't configured, so this workout saves to the demo user (see
+            docs/SETUP.md to enable log in).
           </p>
         )}
         <SessionControls

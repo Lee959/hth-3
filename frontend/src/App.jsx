@@ -107,8 +107,8 @@ export default function App() {
           {!configured && (
             <div className="relative z-10 mx-4 flex shrink-0 items-center justify-center gap-2 rounded-full border border-amber-300/20 bg-amber-400/10 px-4 py-2 text-center text-xs text-amber-100/90 backdrop-blur-xl md:mx-auto md:max-w-fit">
               <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-300" />
-              Auth0 isn't configured yet — set VITE_AUTH0_DOMAIN and VITE_AUTH0_CLIENT_ID in
-              frontend/.env. See docs/SETUP.md.
+              Dev mode — Auth0 isn't configured, so you're seeing the demo user's data from the
+              database. See docs/SETUP.md to enable log in.
             </div>
           )}
         </>

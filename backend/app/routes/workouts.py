@@ -81,7 +81,10 @@ def summary():
     scores per session for trend lines."""
     user = User.query.filter_by(auth0_sub=g.current_user_sub).first()
     sessions = (
-        WorkoutSession.query.filter_by(user_id=user.id).order_by(WorkoutSession.started_at).all()
+        WorkoutSession.query.filter_by(user_id=user.id)
+        .options(selectinload(WorkoutSession.exercise_sets))
+        .order_by(WorkoutSession.started_at)
+        .all()
         if user
         else []
     )

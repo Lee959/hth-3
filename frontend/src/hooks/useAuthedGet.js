@@ -8,20 +8,23 @@ import { api, attachAuthToken } from '../services/api.js'
  * 'signed-out' | 'loading' | 'error' | 'ready' so callers can pick the
  * right empty state — per-user data only exists once someone is logged in,
  * since everything is saved against their Auth0 account.
+ *
+ * While Auth0 isn't configured (dev mode) it fetches without a token: the
+ * backend's DEV_USER_SUB answers as the demo user.
  */
 export function useAuthedGet(path) {
-  const { isAuthenticated, isLoading, getAccessTokenSilently } = useAuth()
+  const { isAuthenticated, isLoading, getAccessTokenSilently, configured } = useAuth()
   const [state, setState] = useState({ status: 'loading', data: null })
 
   useEffect(() => {
     if (isLoading) return undefined
-    if (!isAuthenticated) {
+    if (configured && !isAuthenticated) {
       setState({ status: 'signed-out', data: null })
       return undefined
     }
 
     let cancelled = false
-    attachAuthToken(getAccessTokenSilently)
+    if (isAuthenticated) attachAuthToken(getAccessTokenSilently)
     setState({ status: 'loading', data: null })
     api
       .get(path)
@@ -30,7 +33,7 @@ export function useAuthedGet(path) {
     return () => {
       cancelled = true
     }
-  }, [path, isAuthenticated, isLoading, getAccessTokenSilently])
+  }, [path, isAuthenticated, isLoading, getAccessTokenSilently, configured])
 
   return state
 }
