@@ -1,6 +1,6 @@
 # API Reference
 
-Base URL (dev): `http://localhost:5000/api`. All routes except
+Base URL (dev): `http://localhost:5050/api`. All routes except
 `/health` require `Authorization: Bearer <auth0-access-token>`.
 
 ## Health

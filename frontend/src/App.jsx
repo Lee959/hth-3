@@ -3,6 +3,7 @@ import { Link, NavLink, Route, Routes, useLocation } from 'react-router-dom'
 import { useAuth } from './auth/AuthContext.jsx'
 import AmbientBackground from './components/AmbientBackground.jsx'
 import ConnectionWarning from './components/ConnectionWarning.jsx'
+import RequireAuth from './components/RequireAuth.jsx'
 import { useCameraBackdrop } from './hooks/useCameraBackdrop.js'
 import Dashboard from './pages/Dashboard.jsx'
 import History from './pages/History.jsx'
@@ -101,20 +102,31 @@ export default function App() {
                   Log out{user?.name ? ` (${user.name})` : ''}
                 </button>
               ) : (
-                <button
-                  onClick={async () => {
-                    if (configured) {
-                      await loginWithRedirect()
-                      return
-                    }
-                    if (auth0Domain) window.location.assign(`https://${auth0Domain}/u/login`)
-                  }}
-                  disabled={!canStartAuth}
-                  title={canStartAuth ? undefined : 'Log in needs Auth0 configured — see docs/SETUP.md'}
-                  className="whitespace-nowrap rounded-full bg-white px-4 py-1.5 text-slate-900 transition hover:bg-white/90 disabled:cursor-not-allowed disabled:bg-white/20 disabled:text-white/50"
-                >
-                  Log in
-                </button>
+                <>
+                  {/* Register.jsx's own submit is what actually calls
+                      loginWithRedirect with screen_hint: 'signup' — this is
+                      just the app-wide entry point to that page. */}
+                  <Link
+                    to="/register"
+                    className="whitespace-nowrap rounded-full px-3 py-1.5 text-white/70 transition hover:text-white"
+                  >
+                    Sign up
+                  </Link>
+                  <button
+                    onClick={async () => {
+                      if (configured) {
+                        await loginWithRedirect()
+                        return
+                      }
+                      if (auth0Domain) window.location.assign(`https://${auth0Domain}/u/login`)
+                    }}
+                    disabled={!canStartAuth}
+                    title={canStartAuth ? undefined : 'Log in needs Auth0 configured — see docs/SETUP.md'}
+                    className="whitespace-nowrap rounded-full bg-white px-4 py-1.5 text-slate-900 transition hover:bg-white/90 disabled:cursor-not-allowed disabled:bg-white/20 disabled:text-white/50"
+                  >
+                    Log in
+                  </button>
+                </>
               )}
             </nav>
           </header>
@@ -135,9 +147,30 @@ export default function App() {
           <Route path="/" element={<Landing />} />
           <Route path="/register" element={<Register />} />
           <Route path="/signin" element={<SignIn />} />
-          <Route path="/dashboard" element={<Dashboard />} />
-          <Route path="/session" element={<WorkoutSession />} />
-          <Route path="/history" element={<History />} />
+          <Route
+            path="/dashboard"
+            element={
+              <RequireAuth>
+                <Dashboard />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/session"
+            element={
+              <RequireAuth>
+                <WorkoutSession />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/history"
+            element={
+              <RequireAuth>
+                <History />
+              </RequireAuth>
+            }
+          />
         </Routes>
       </main>
     </div>
