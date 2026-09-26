@@ -5,6 +5,9 @@ import AmbientBackground from './components/AmbientBackground.jsx'
 import { useCameraBackdrop } from './hooks/useCameraBackdrop.js'
 import Dashboard from './pages/Dashboard.jsx'
 import History from './pages/History.jsx'
+import Landing from './pages/Landing.jsx'
+import Register from './pages/Register.jsx'
+import SignIn from './pages/SignIn.jsx'
 import WorkoutSession from './pages/WorkoutSession.jsx'
 
 function CameraIcon() {
@@ -41,6 +44,8 @@ function navLinkClass({ isActive }) {
 
 export default function App() {
   const { isAuthenticated, loginWithRedirect, logout, user, configured } = useAuth()
+  const auth0Domain = import.meta.env.VITE_AUTH0_DOMAIN
+  const canStartAuth = configured || Boolean(auth0Domain)
   const location = useLocation()
   // The workout session is meant to be immersive — full-screen camera, no
   // chrome around it — so it's the one route that hides the top bar
@@ -84,6 +89,9 @@ export default function App() {
               <NavLink to="/session" className={navLinkClass}>
                 Workout
               </NavLink>
+              <NavLink to="/dashboard" className={navLinkClass}>
+                Dashboard
+              </NavLink>
               {isAuthenticated ? (
                 <button
                   onClick={() => logout({ logoutParams: { returnTo: window.location.origin } })}
@@ -93,9 +101,15 @@ export default function App() {
                 </button>
               ) : (
                 <button
-                  onClick={() => loginWithRedirect()}
-                  disabled={!configured}
-                  title={configured ? undefined : 'Log in needs Auth0 configured — see docs/SETUP.md'}
+                  onClick={async () => {
+                    if (configured) {
+                      await loginWithRedirect()
+                      return
+                    }
+                    if (auth0Domain) window.location.assign(`https://${auth0Domain}/u/login`)
+                  }}
+                  disabled={!canStartAuth}
+                  title={canStartAuth ? undefined : 'Log in needs Auth0 configured — see docs/SETUP.md'}
                   className="whitespace-nowrap rounded-full bg-white px-4 py-1.5 text-slate-900 transition hover:bg-white/90 disabled:cursor-not-allowed disabled:bg-white/20 disabled:text-white/50"
                 >
                   Log in
@@ -116,7 +130,10 @@ export default function App() {
 
       <main className="relative z-10 min-h-0 flex-1 overflow-y-auto">
         <Routes>
-          <Route path="/" element={<Dashboard />} />
+          <Route path="/" element={<Landing />} />
+          <Route path="/register" element={<Register />} />
+          <Route path="/signin" element={<SignIn />} />
+          <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/session" element={<WorkoutSession />} />
           <Route path="/history" element={<History />} />
         </Routes>

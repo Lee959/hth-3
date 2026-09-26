@@ -51,6 +51,10 @@
   .animate-hint-nudge {
     animation: hint-nudge 1.6s ease-in-out infinite;
   }
+
+  .animate-page-enter {
+    animation: page-enter 360ms ease-out both;
+  }
 }
 
 /* Start-workout hint: the glow swells and brightens... */
@@ -89,11 +93,25 @@
   }
 }
 
+@keyframes page-enter {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.985);
+    filter: blur(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .animate-drift,
   .animate-drift-slow,
   .animate-hint-breathe,
-  .animate-hint-nudge {
+  .animate-hint-nudge,
+  .animate-page-enter {
     animation: none;
   }
 }
