@@ -351,18 +351,22 @@ through `GlassTile.jsx`, since `GlassTile.jsx` is scoped to the immersive
 HUD's own tile shape (`rounded-2xl`) — but it's the same underlying class
 either way, so nothing in the app still uses the old flat fill.
 
-**The session's End Workout button (`SessionControls.jsx`) reuses
-`StartWorkoutDock.jsx`'s "Start workout" button markup verbatim** — same
-classes on every element, just `StopIcon`/"End workout" swapped in for
-`PlayIcon`/"Start workout" (and a `<button onClick>` instead of a `<Link>`,
-since it fires a handler rather than navigating) — rather than a plain
-`GlassTile`/`.liquid-glass` tile, so ending a workout is pixel-identical in
-size, drop shadow, and hover behavior to starting one: same `h-12 w-12`
-white/black-icon badge, same `.liquid-glass` pill with the same
+**The session's End Workout button (`SessionControls.jsx`) is styled off
+`StartWorkoutDock.jsx`'s "Start workout" button** (`StopIcon`/"End workout"
+in place of `PlayIcon`/"Start workout"; a `<button onClick>` instead of a
+`<Link>`, since it fires a handler rather than navigating) rather than a
+plain `GlassTile`/`.liquid-glass` tile — same `h-12 w-12` white/black-icon
+badge, same `.liquid-glass` pill with the same
 `shadow-[0_20px_50px_-12px_rgba(0,0,0,0.8)]`, same rose/fuchsia/teal glow
 blooming behind it and `-translate-y-1 scale-105`/badge `scale-110` "pop"
-on hover or focus. Unlike the previous pass, the label is always shown
-(matching `StartWorkoutDock.jsx`) rather than hidden until hover.
+on hover or focus — so ending a workout reads as the same primary-action
+language as starting one. One deliberate difference from
+`StartWorkoutDock.jsx`: **the label is icon-only at rest, growing in on
+hover/focus** (`max-w-0 -> max-w-xs` plus `pl-0 -> pl-4` on the label,
+`pr-2.5 -> pr-8` on the pill in step) rather than always shown — this
+button floats directly over the live HUD rather than sitting in its own
+dock below the fold, so it stays visually quiet until the user's actually
+reaching for it.
 
 Two type families, applied consistently: **Anton** for the one thing that
 should read as a giant scoreboard number — the rep count in
