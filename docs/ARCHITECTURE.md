@@ -114,18 +114,21 @@ src/
   lib/
     poseMath.js                # landmark indices, angle-at-a-joint math, EMA smoothing
     repCounter.js                # generic angle-based rep state machine (up/down)
-    muscleMap.js                   # exercise -> { MUSCLE_GROUP: weight } for the heatmap
+    muscleMap.js                   # exercise -> { MUSCLE_GROUP: weight }; LOAD_PER_REP; summaryScoresFor()
+    heartRateZones.js                # shared HR zone model (live gauge + session summary)
+    workoutSummary.js                  # builds/[stub] persists the Workout Saved snapshot
   hooks/
     useCamera.js                     # the single getUserMedia() call (see above)
     usePoseDetection.js                # MediaPipe PoseLandmarker on the shared stream
-    useExerciseTracker.js                # landmarks -> exercise/reps/muscle LOAD scores/speed
+    useExerciseTracker.js                # landmarks -> exercise/reps/muscle LOAD scores/speed/totalRestMs
     useVitalsUpload.js                     # MediaRecorder chunks -> backend -> Presage
   components/
     CameraFeed.jsx                 # <video> element, glass frame
-    MuscleHeatmap.jsx                # @musclemap/react wrapper (LOAD color model)
+    MuscleHeatmap.jsx                # @musclemap/react wrapper (LOAD color model), view="FRONT"|"BACK"
     GaugeRing.jsx                      # SVG ring gauge (heart rate zone, rep goal)
     MetricsSidebar.jsx                   # left sidebar: gauges, stat pills, quick actions
     RepCounter.jsx                         # big number + exercise name
+    WorkoutSummary.jsx                       # full-screen "Workout Saved" pop-out shown on End Workout
   pages/
     Dashboard.jsx                       # landing page
     WorkoutSession.jsx                    # wires camera + pose + tracker + sidebar together
@@ -219,19 +222,77 @@ everything the session page shows, entirely client-side:
    completedAt}`) is appended to `completedSets`, which `WorkoutSession.jsx`
    watches and persists via `POST /api/workouts/:id/sets` — the endpoint
    already existed on the backend but nothing called it until now.
-   `SetHistory.jsx` renders that same list locally as a quick "sets this
-   session" readout. This is intentionally minimal (no editing, no set
-   targets/goals yet) — a foundation for a real sets UI on the History
-   page, not the whole feature.
-7. Within one exercise, every completed rep adds LOAD points to that
+   `completedSets` is **not** rendered live anywhere in the session HUD —
+   an earlier version had a `SetHistory.jsx` tile in the right-hand column
+   for this, but five tiles vertically centered in that column could run
+   past a short mobile viewport and forced an internal scrollbar (see the
+   layout section below); rather than just tolerating that scrollbar, the
+   whole live session view now only shows the four *current-set* tiles, and
+   every session-level stat (sets, duration, rest, avg HR) is deferred to
+   the `WorkoutSummary.jsx` pop-out on End Workout instead (see below), so
+   nothing there needs to scroll.
+7. `totalRestMs` (returned by the hook alongside `restElapsedMs`) is the sum
+   of every *finished* rest period this session, not just the current one —
+   `restElapsedMs` resets to 0 each time a new set starts; `totalRestMs`
+   doesn't. It's folded in at the one place a rest period actually ends
+   (the pending→active graduation branch, where the hook adds `now -
+   restStartedAt.current` before clearing `restStartedAt`), plus whatever
+   of the *current* rest period has elapsed so far, so it's always
+   accurate to read at any point — including mid-rest, which is what lets
+   `WorkoutSession.jsx` grab it synchronously in `handleEndSession` without
+   waiting for a tick.
+8. Within one exercise, every completed rep adds LOAD points to that
    exercise's muscles via `lib/muscleMap.js`'s weight table (capped at 100,
    decaying slowly when idle) — so the heatmap reflects accumulated effort
    for the *current set*, matching `@musclemap/react`'s LOAD color model.
    `MuscleHeatmap.jsx` renders that score map directly.
-8. The same landmark stream feeds a simple velocity/acceleration estimate
+9. The same landmark stream feeds a simple velocity/acceleration estimate
    (position delta / time, EMA-smoothed) shown as "Speed" / "Peak accel" in
    the sidebar — relative units (fraction of frame size per second), not
    calibrated to real-world meters. See the hook's doc comment for why.
+
+## Workout Saved summary (`WorkoutSummary.jsx`)
+
+Shown as a full-screen pop-out over the session HUD (`absolute inset-0
+z-30`, its own gradient background) when the user hits End Workout —
+visual-only for now, per explicit scope: no backend persistence, just a
+clearly-marked stub (see below).
+
+- **Snapshot, not live state.** `WorkoutSession.jsx`'s `handleEndSession`
+  calls `buildWorkoutSummary()` (`lib/workoutSummary.js`) *before* calling
+  `useExerciseTracker`'s `reset()` — `reset()` clears `completedSets` and
+  `totalRestMs`, so this is the only point that data is still readable.
+  `buildWorkoutSummary` bundles `completedSets`, `totalDurationMs` (wall
+  clock since a `sessionStartedAtRef` captured at mount — separate from the
+  tracker, since a workout's total duration outlives any one rest/active
+  phase), `totalRestMs`, average heart rate (mean of every `heart_rate_bpm`
+  reading in `vitals`), and `summaryScoresFor(completedSets)` — a whole-
+  session muscle heatmap built the same way the live one is (same
+  `LOAD_PER_REP` weight table in `lib/muscleMap.js`) but summed once from
+  the final set list instead of decaying frame-by-frame.
+- **Front + back heatmap.** `@musclemap/react`'s `view` prop is `"FRONT"` or
+  `"BACK"` only (no `"BOTH"`), so the summary renders two `MuscleHeatmap.jsx`
+  tiles side by side with `view="FRONT"` and `view="BACK"` — `MuscleHeatmap`
+  now takes `view` as a prop (default `"FRONT"`, unchanged for its usual
+  spot in the live HUD) rather than hardcoding it. A light-to-heavy-load
+  gradient swatch underneath (reusing the exported `HEATMAP_RED` scale)
+  stands in for a legend, since the color model here is a continuous 0-100
+  score, not discrete primary/secondary/untargeted categories.
+- **Heart rate zone** reuses the same 5-zone model as the live
+  `HeartRateGauge.jsx` dial, now factored out into `lib/heartRateZones.js`
+  (`HEART_RATE_ZONES`, `zoneForBpm`) so both places share one definition.
+- **Exercise table** groups the flat `completedSets` log by exercise name
+  into SETS/total-REPS rows (`groupSets()` in `WorkoutSummary.jsx`), styled
+  as a name-left/numbers-right list — the format asked for was a workout-
+  plan-style table, not a per-set chronological log like the old
+  `SetHistory.jsx` did.
+- **Persistence stub.** `stubSaveWorkoutSummary()` in `lib/workoutSummary.js`
+  just logs the snapshot and resolves `{ saved: false }` — a real call site
+  for whenever a `POST /api/workouts/:id/summary`-style endpoint exists,
+  intentionally not built yet (no schema/architecture decisions made here).
+- **"New Workout"** clears the summary and resets `sessionStartedAtRef`
+  without leaving `/session` (stays in the immersive view); **"Home"**
+  navigates back to `/` via the existing back-button route.
 
 ## Design: "Liquid Glass"
 
@@ -276,13 +337,15 @@ display, rather than full-width side panels:
   sharing one card.
 - **Far right edge, vertically centered:** a narrow vertical column, top to
   bottom — `ExerciseTitle.jsx` (current exercise name), `MuscleHeatmap.jsx`
-  (front view only — `view="FRONT"`, not `"BOTH"`, to stay compact at this
+  (front view only — `view="FRONT"`, not `"BACK"`, to stay compact at this
   width), `RepCounter.jsx` (the big Anton number, rep count only — no
-  phase-awareness; see `RestTimer.jsx` above for that), a rep-goal
-  `GaugeRing.jsx`, then `SetHistory.jsx` — five separate tiles stacked with
-  `gap-3`, not one shared card. Rep goal lives here rather than in the left
-  HUD because it's part of "what am I doing and how's it going," which
-  reads better next to the exercise name than next to heart rate/breathing.
+  phase-awareness; see `RestTimer.jsx` above for that), then a rep-goal
+  `GaugeRing.jsx` — four separate tiles stacked with `gap-3`, not one shared
+  card. Rep goal lives here rather than in the left HUD because it's part of
+  "what am I doing and how's it going," which reads better next to the
+  exercise name than next to heart rate/breathing. Session-level stats
+  (sets, total/rest time, avg HR) are deliberately **not** in this column —
+  see "Workout Saved summary" above for where they live instead.
 
 **Heart rate gets its own dedicated dial, not the generic `GaugeRing.jsx`.**
 `HeartRateGauge.jsx` is a Garmin-watch-style widget: a 270° arc split into
@@ -302,14 +365,18 @@ read. `GaugeRing.jsx` is still what everything else uses (rep goal here).
   stay pinned to the same `bottom-6` position whether or not the notice
   above them is showing, rather than shifting position based on it.
 
-**The left and right columns cap their height and scroll internally**
-(`max-h-[62vh] overflow-y-auto`) rather than assuming their content always
-fits — five tiles vertically centered can genuinely run past a short
-viewport (a real bug caught on mobile during development, not a
-hypothetical), and centering alone doesn't know to leave room for the
-bottom-middle controls/notice. If you add another tile to either column,
-re-check this on a short/mobile viewport rather than assuming the existing
-budget still has room.
+**The left column caps its height and scrolls internally**
+(`max-h-[62vh] overflow-y-auto`) rather than assuming its content always
+fits — its 4 tiles are a fixed set today, but centering alone doesn't know
+to leave room for the bottom-middle controls/notice on a short viewport, so
+the cap is kept as a safety net. The right column dropped this same
+treatment once `SetHistory.jsx` was removed from it (4 tiles now fit
+comfortably within a normal viewport without it — the internal scrollbar
+that treatment produced was the actual complaint that led to moving session
+stats into `WorkoutSummary.jsx` instead of just tolerating it). If you add
+another tile to either column, re-check on a short/mobile viewport rather
+than assuming the existing budget still has room — re-add the cap to the
+right column too if it's ever needed again.
 
 Because every element here is a small, fixed-width tile rather than a
 width-dependent column (the old design's `sm:w-1/4` side panels), **the

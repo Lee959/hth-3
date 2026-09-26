@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 
 import CameraFeed from '../components/CameraFeed.jsx'
@@ -9,11 +9,13 @@ import MuscleHeatmap from '../components/MuscleHeatmap.jsx'
 import RepCounter from '../components/RepCounter.jsx'
 import RestTimer from '../components/RestTimer.jsx'
 import SessionControls from '../components/SessionControls.jsx'
+import WorkoutSummary from '../components/WorkoutSummary.jsx'
 import { useAuth } from '../auth/AuthContext.jsx'
 import { useCamera } from '../hooks/useCamera.js'
 import { useExerciseTracker } from '../hooks/useExerciseTracker.js'
 import { usePoseDetection } from '../hooks/usePoseDetection.js'
 import { useVitalsUpload } from '../hooks/useVitalsUpload.js'
+import { buildWorkoutSummary, stubSaveWorkoutSummary } from '../lib/workoutSummary.js'
 import { api, attachAuthToken } from '../services/api.js'
 
 function BackIcon() {
@@ -39,10 +41,22 @@ export default function WorkoutSession() {
   const { videoRef, stream, ready } = useCamera()
   const [paused, setPaused] = useState(false)
   const landmarks = usePoseDetection(videoRef, { running: ready && !paused })
-  const { phase, exerciseName, reps, scores, speed, peakAcceleration, restElapsedMs, completedSets, reset } =
-    useExerciseTracker(landmarks)
+  const {
+    phase,
+    exerciseName,
+    reps,
+    scores,
+    speed,
+    peakAcceleration,
+    restElapsedMs,
+    totalRestMs,
+    completedSets,
+    reset,
+  } = useExerciseTracker(landmarks)
   const [sessionId, setSessionId] = useState(null)
   const [vitals, setVitals] = useState([])
+  const [summary, setSummary] = useState(null)
+  const sessionStartedAtRef = useRef(Date.now())
 
   useEffect(() => {
     if (isAuthenticated) attachAuthToken(getAccessTokenSilently)
@@ -76,8 +90,24 @@ export default function WorkoutSession() {
 
   function handleEndSession() {
     if (sessionId) api.post(`/workouts/${sessionId}/end`)
+    // Snapshot everything the summary screen needs BEFORE reset() clears
+    // the tracker's completedSets/totalRestMs.
+    const finishedSummary = buildWorkoutSummary({
+      completedSets,
+      totalDurationMs: Date.now() - sessionStartedAtRef.current,
+      totalRestMs,
+      vitals,
+    })
+    stubSaveWorkoutSummary(finishedSummary)
+    setSummary(finishedSummary)
     reset()
     setPaused(true)
+  }
+
+  function handleNewWorkout() {
+    setSummary(null)
+    sessionStartedAtRef.current = Date.now()
+    setPaused(false)
   }
 
   return (
@@ -145,6 +175,8 @@ export default function WorkoutSession() {
           onReset={reset}
         />
       </div>
+
+      {summary && <WorkoutSummary summary={summary} onDone={handleNewWorkout} />}
     </div>
   )
 }
