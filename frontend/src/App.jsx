@@ -10,7 +10,6 @@ import { ScrollContainerContext } from './hooks/useAppScrollContainer.js'
 import Dashboard from './pages/Dashboard.jsx'
 import History from './pages/History.jsx'
 import Landing from './pages/Landing.jsx'
-import Register from './pages/Register.jsx'
 import SignIn from './pages/SignIn.jsx'
 import WorkoutSession from './pages/WorkoutSession.jsx'
 
@@ -48,7 +47,7 @@ function navLinkClass({ isActive }) {
 
 export default function App() {
   const { isAuthenticated, logout, user, configured } = useAuth()
-  const { startLogin, canStartAuth } = useLoginRedirect()
+  const { startLogin, startSignup, canStartAuth } = useLoginRedirect()
   const location = useLocation()
   // The workout session is meant to be immersive — full-screen camera, no
   // chrome around it — so it's the one route that hides the top bar
@@ -120,15 +119,16 @@ export default function App() {
                 </button>
               ) : (
                 <>
-                  {/* Register.jsx's own submit is what actually calls
-                      loginWithRedirect with screen_hint: 'signup' — this is
-                      just the app-wide entry point to that page. */}
-                  <Link
-                    to="/register"
-                    className="whitespace-nowrap rounded-full px-3 py-1.5 text-white/70 transition hover:text-white"
+                  {/* Straight to Auth0's sign-up tab (useLoginRedirect) —
+                      no intermediate form page anymore. */}
+                  <button
+                    onClick={startSignup}
+                    disabled={!canStartAuth}
+                    title={canStartAuth ? undefined : 'Sign up needs Auth0 configured — see docs/SETUP.md'}
+                    className="whitespace-nowrap rounded-full px-3 py-1.5 text-white/70 transition hover:text-white disabled:cursor-not-allowed disabled:text-white/30"
                   >
                     Sign up
-                  </Link>
+                  </button>
                   {/* The landing page's own closing CTA is the "log in"
                       entry point there (straight to Auth0, see
                       Landing.jsx) — this header button is redundant on
@@ -162,7 +162,6 @@ export default function App() {
         <ScrollContainerContext.Provider value={mainRef}>
           <Routes>
             <Route path="/" element={<Landing />} />
-            <Route path="/register" element={<Register />} />
             <Route path="/signin" element={<SignIn />} />
             <Route
               path="/dashboard"

@@ -147,8 +147,7 @@ export default function Landing() {
       >
         {/* Straight to Auth0 (useLoginRedirect — the same handoff the
             header's "Log in" button used before it was dropped from this
-            page), not a Link to /register — one less stop between "now"
-            and actually signing up. */}
+            page) — no form page in between. */}
         <button
           type="button"
           onClick={startLogin}
