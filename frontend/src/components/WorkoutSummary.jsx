@@ -35,12 +35,15 @@ function groupSets(completedSets) {
   return order.map((name) => byExercise.get(name))
 }
 
+// Same shape as MetricsSidebar.jsx's StatTile (label on top, semibold value,
+// light sublabel/unit below) so the summary's stat tiles read as the same
+// family as the live HUD's metrics board, not a separate visual language.
 function StatTile({ label, value, sublabel }) {
   return (
-    <GlassTile className="flex-1 p-4 text-center">
-      <p className="font-anton text-3xl leading-none tabular-nums text-white">{value}</p>
-      <p className="mt-1 font-rajdhani text-xs font-bold uppercase tracking-wide text-white/70">{label}</p>
-      {sublabel && <p className="font-rajdhani text-[11px] font-light text-white/50">{sublabel}</p>}
+    <GlassTile className="p-3 text-center">
+      <p className="font-rajdhani text-xs font-bold uppercase tracking-wide text-white/80">{label}</p>
+      <p className="text-xl font-semibold text-white">{value}</p>
+      {sublabel && <p className="font-rajdhani text-xs font-light text-white/50">{sublabel}</p>}
     </GlassTile>
   )
 }
@@ -60,7 +63,7 @@ export default function WorkoutSummary({ summary, onDone }) {
   const zone = zoneForBpm(avgHeartRateBpm)
 
   return (
-    <div className="absolute inset-0 z-30 flex justify-center overflow-y-auto bg-gradient-to-br from-indigo-950 via-violet-900 to-fuchsia-900 px-4 py-8">
+    <div className="absolute inset-0 z-30 flex justify-center overflow-y-auto bg-black px-4 py-8">
       <div className="flex w-full max-w-md flex-col items-center gap-6">
         <h1 className="font-anton text-4xl uppercase tracking-wide text-white">Workout Saved</h1>
 

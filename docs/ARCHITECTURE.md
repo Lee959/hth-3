@@ -254,9 +254,16 @@ everything the session page shows, entirely client-side:
 ## Workout Saved summary (`WorkoutSummary.jsx`)
 
 Shown as a full-screen pop-out over the session HUD (`absolute inset-0
-z-30`, its own gradient background) when the user hits End Workout —
-visual-only for now, per explicit scope: no backend persistence, just a
-clearly-marked stub (see below).
+z-30`) when the user hits End Workout — visual-only for now, per explicit
+scope: no backend persistence, just a clearly-marked stub (see below).
+**Background and stat-tile style deliberately match `MetricsSidebar.jsx`
+(the live HUD's "metrics board"), not the app's purple page gradient:**
+`bg-black` (same as `WorkoutSession.jsx`'s own root, which the metrics
+board sits on) rather than `from-indigo-950 via-violet-900 to-fuchsia-900`,
+and `WorkoutSummary.jsx`'s own `StatTile` mirrors `MetricsSidebar.jsx`'s —
+label on top (`text-xs font-bold uppercase`), value as a plain `text-xl
+font-semibold` (not `font-anton`, which stays reserved for `RepCounter.jsx`
+and `RestTimer.jsx`'s big scoreboard numbers), light sublabel/unit below.
 
 - **Snapshot, not live state.** `WorkoutSession.jsx`'s `handleEndSession`
   calls `buildWorkoutSummary()` (`lib/workoutSummary.js`) *before* calling
