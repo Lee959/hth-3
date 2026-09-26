@@ -2,7 +2,6 @@ import { Link, NavLink, Route, Routes, useLocation } from 'react-router-dom'
 
 import { useAuth } from './auth/AuthContext.jsx'
 import AmbientBackground from './components/AmbientBackground.jsx'
-import ConnectionWarning from './components/ConnectionWarning.jsx'
 import RequireAuth from './components/RequireAuth.jsx'
 import { useCameraBackdrop } from './hooks/useCameraBackdrop.js'
 import Dashboard from './pages/Dashboard.jsx'
@@ -138,7 +137,6 @@ export default function App() {
               database. See docs/SETUP.md to enable log in.
             </div>
           )}
-          <ConnectionWarning className="relative z-10 mx-4 mt-2 shrink-0 md:mx-auto md:max-w-fit" />
         </>
       )}
 

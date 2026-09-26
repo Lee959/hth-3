@@ -1,7 +1,10 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 
+import WorkoutDetailPanel from './WorkoutDetailPanel.jsx'
+import { refreshAuthedData } from '../hooks/useAuthedGet.js'
 import { useWorkoutHistory } from '../hooks/useWorkoutHistory.js'
+import { api } from '../services/api.js'
 
 // How long the panel lingers after the pointer leaves it, so a slightly
 // sloppy mouse path back into it doesn't snap it shut.
@@ -105,13 +108,55 @@ function EmptyState({ status }) {
  * the panel slides in under a pointer that's already moving, and browsers
  * don't fire mouseenter for an element that moves under the cursor, so
  * hover events alone would snap it shut on a quick swipe off the edge.
+ *
+ * Clicking a workout opens its summary in WorkoutDetailPanel, filling the
+ * screen to the right, and while that's open the drawer is locked open
+ * too: pointer position and outside clicks no longer close it, and the
+ * summary's close button (or Escape) puts both away together. Deleting a
+ * workout happens from inside its summary.
  */
 export default function HistorySidebar() {
-  const { status, sessions } = useWorkoutHistory()
+  const { status, sessions: loadedSessions } = useWorkoutHistory()
   const [open, setOpen] = useState(false)
+  const [selectedId, setSelectedId] = useState(null)
+  // Hidden right away on delete, before the list reloads without them.
+  const [deletedIds, setDeletedIds] = useState(() => new Set())
+  const [deleteFailed, setDeleteFailed] = useState(false)
   const closeTimer = useRef(null)
   const panelRef = useRef(null)
   const tabRef = useRef(null)
+
+  const sessions = loadedSessions.filter((s) => !deletedIds.has(s.id))
+  const selectedSession = sessions.find((s) => s.id === selectedId) ?? null
+  const detailOpen = selectedSession != null
+
+  const closeAll = useCallback(() => {
+    setSelectedId(null)
+    setOpen(false)
+    tabRef.current?.focus()
+  }, [])
+
+  async function deleteSession(id) {
+    setDeleteFailed(false)
+    if (selectedId === id) setSelectedId(null)
+    setDeletedIds((ids) => new Set(ids).add(id))
+    try {
+      await api.delete(`/workouts/${id}`)
+    } catch (err) {
+      // Already gone (deleted in another tab) is as good as deleted.
+      if (err.response?.status !== 404) {
+        setDeletedIds((ids) => {
+          const next = new Set(ids)
+          next.delete(id)
+          return next
+        })
+        setDeleteFailed(true)
+        return
+      }
+    }
+    // The home page totals include it too.
+    refreshAuthedData()
+  }
 
   function show() {
     clearTimeout(closeTimer.current)
@@ -126,21 +171,27 @@ export default function HistorySidebar() {
   useEffect(() => () => clearTimeout(closeTimer.current), [])
 
   useEffect(() => {
+    if (!open) {
+      setDeleteFailed(false)
+    }
+  }, [open])
+
+  useEffect(() => {
     if (!open) return undefined
+    // Locked open while a workout's summary is showing.
+    if (detailOpen) clearTimeout(closeTimer.current)
     function onKeyDown(event) {
-      if (event.key === 'Escape') {
-        setOpen(false)
-        tabRef.current?.focus()
-      }
+      if (event.key === 'Escape') closeAll()
     }
     function onPointerDown(event) {
+      if (detailOpen) return
       if (!panelRef.current?.contains(event.target) && !tabRef.current?.contains(event.target)) {
         setOpen(false)
       }
     }
     function onMouseMove(event) {
       const panel = panelRef.current
-      if (!panel) return
+      if (!panel || detailOpen) return
       // offsetLeft/offsetWidth ignore the slide-in transform, so this is the
       // panel's resting right edge even mid-animation.
       if (event.clientX > panel.offsetLeft + panel.offsetWidth + CLOSE_MARGIN_PX) hideSoon()
@@ -154,7 +205,7 @@ export default function HistorySidebar() {
       document.removeEventListener('pointerdown', onPointerDown)
       document.removeEventListener('mousemove', onMouseMove)
     }
-  }, [open])
+  }, [open, detailOpen, closeAll])
 
   const groups = status === 'ready' ? groupSessions(sessions) : []
   const count = status === 'ready' ? sessions.length : 0
@@ -190,12 +241,14 @@ export default function HistorySidebar() {
         <ChevronIcon />
       </button>
 
+      {/* The dark tint under the glass (here and on the summary panel) keeps
+          the dashboard's bright cards behind from washing it out. */}
       <aside
         id="history-sidebar"
         ref={panelRef}
         aria-label="Workout history"
         onFocus={show}
-        className={`liquid-glass fixed inset-y-3 left-3 z-40 flex w-72 max-w-[calc(100vw-1.5rem)] flex-col rounded-3xl transition-[transform,opacity,visibility] duration-300 ease-out motion-reduce:transition-none ${
+        className={`liquid-glass fixed inset-y-3 left-3 z-40 flex w-72 max-w-[calc(100vw-1.5rem)] flex-col rounded-3xl bg-[#07060d]/25 transition-[transform,opacity,visibility] duration-300 ease-out motion-reduce:transition-none ${
           open ? 'visible translate-x-0 opacity-100' : 'invisible -translate-x-[110%] opacity-0'
         }`}
       >
@@ -212,6 +265,12 @@ export default function HistorySidebar() {
         </div>
         <div className="mx-5 h-px bg-white/10" />
 
+        {deleteFailed && (
+          <p role="alert" className="mx-3 mt-3 rounded-xl border border-amber-300/20 bg-amber-400/10 px-3 py-2 font-rajdhani text-xs text-amber-100/90">
+            Couldn’t delete that workout. Try again?
+          </p>
+        )}
+
         {groups.length === 0 ? (
           <EmptyState status={status} />
         ) : (
@@ -221,18 +280,25 @@ export default function HistorySidebar() {
                 <p className="px-3 pb-1 font-rajdhani text-[11px] font-bold uppercase tracking-[0.18em] text-white/40">
                   {group.label}
                 </p>
-                <ul>
+                <ul className="space-y-0.5">
                   {group.sessions.map((session) => {
                     const { title, details } = describeSession(session, group.label)
+                    const selected = session.id === selectedId
                     return (
-                      <li
-                        key={session.id}
-                        className="rounded-xl px-3 py-2 transition hover:bg-white/10"
-                      >
-                        <p className="truncate font-rajdhani text-sm font-semibold text-white/90">{title}</p>
-                        {details && (
-                          <p className="truncate font-rajdhani text-xs font-light text-white/50">{details}</p>
-                        )}
+                      <li key={session.id}>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedId(session.id)}
+                          aria-current={selected ? 'true' : undefined}
+                          className={`block w-full rounded-xl px-3 py-2 text-left transition hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-white/60 ${
+                            selected ? 'bg-white/10' : ''
+                          }`}
+                        >
+                          <p className="truncate font-rajdhani text-sm font-semibold text-white/90">{title}</p>
+                          {details && (
+                            <p className="truncate font-rajdhani text-xs font-light text-white/50">{details}</p>
+                          )}
+                        </button>
                       </li>
                     )
                   })}
@@ -252,6 +318,12 @@ export default function HistorySidebar() {
           </Link>
         </div>
       </aside>
+
+      <WorkoutDetailPanel
+        session={selectedSession}
+        onClose={closeAll}
+        onDelete={deleteSession}
+      />
     </>
   )
 }

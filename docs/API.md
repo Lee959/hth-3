@@ -58,7 +58,14 @@ Request body (everything except `exercise_name` optional):
 
 ### `GET /workouts/<session_id>`
 One workout in full: the `WorkoutSession` fields plus `exercise_sets`,
-`vitals` and `rep_events`, each in time order.
+`vitals` and `rep_events`, each in time order, and `effort`
+(`{ score, zone_minutes, has_heart_rate, max_heart_rate }`, worked out the
+same way as the summary's effort score).
+
+### `DELETE /workouts/<session_id>`
+Permanently deletes the workout and everything recorded in it (sets, reps,
+heart-rate readings). Returns `204`, or `404` if it doesn't exist or
+belongs to someone else.
 
 ## Vitals
 

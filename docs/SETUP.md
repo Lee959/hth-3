@@ -55,6 +55,12 @@ python run.py
 
 Visit http://localhost:5050/api/health — you should see `{"status": "ok"}`.
 
+Whenever the backend can't reach the database (the health check or any
+other request), it writes a line to `backend/logs/database.log` with the
+time, the request, and the driver's error, e.g.
+`2026-09-26 17:30:16,120 ERROR Database unreachable during GET /api/workouts/summary: ... timeout expired`.
+Set `LOG_DIR` in `.env` to put it somewhere else.
+
 Run tests with `pytest tests/`.
 
 ## 2. Frontend

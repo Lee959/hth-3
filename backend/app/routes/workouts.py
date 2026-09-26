@@ -360,18 +360,54 @@ def log_set(session_id: int):
 def get_session(session_id: int):
     """One workout in full, for its summary / history detail view: the
     session (times, duration, summary scores), its sets, its heart-rate
-    readings and its individual reps, each in time order."""
+    readings and its individual reps, each in time order, plus its effort
+    score worked out the same way the home page summary does."""
     session = owned_session_or_404(session_id)
     sets = ExerciseSet.query.filter_by(session_id=session_id).order_by(ExerciseSet.recorded_at).all()
     vitals = (
         VitalsReading.query.filter_by(session_id=session_id).order_by(VitalsReading.recorded_at).all()
     )
     reps = RepEvent.query.filter_by(session_id=session_id).order_by(RepEvent.recorded_at).all()
+
+    points = [
+        ((v.recorded_at - session.started_at).total_seconds(), round(v.heart_rate_bpm))
+        for v in vitals
+        if v.heart_rate_bpm is not None
+    ]
+    # Same max heart rate as the summary: the highest reading across all
+    # of the user's workouts, if that beats the default.
+    top_bpm = (
+        db.session.query(db.func.max(VitalsReading.heart_rate_bpm))
+        .filter(VitalsReading.session_id.in_(_user_workouts(session.user).with_entities(WorkoutSession.id)))
+        .scalar()
+    )
+    max_hr = max(effort.DEFAULT_MAX_HR, round(top_bpm or 0))
+    minutes = effort.zone_minutes(points, max_hr)
+
     return jsonify(
         {
             **session.to_dict(),
             "exercise_sets": [s.to_dict() for s in sets],
             "vitals": [v.to_dict() for v in vitals],
             "rep_events": [r.to_dict() for r in reps],
+            "effort": {
+                "score": effort.effort_score(minutes, sum(s.reps or 0 for s in sets)),
+                "zone_minutes": [round(m, 1) for m in minutes],
+                "has_heart_rate": bool(points),
+                "max_heart_rate": max_hr,
+            },
         }
     )
+
+
+@workouts_bp.delete("/<int:session_id>")
+@requires_auth
+def delete_session(session_id: int):
+    """Deletes one workout and everything recorded in it (sets, reps,
+    heart-rate readings), for good."""
+    session = owned_session_or_404(session_id)
+    for model in (RepEvent, VitalsReading, ExerciseSet):
+        model.query.filter_by(session_id=session_id).delete(synchronize_session=False)
+    db.session.delete(session)
+    db.session.commit()
+    return "", 204

@@ -55,6 +55,15 @@
   .animate-page-enter {
     animation: page-enter 360ms ease-out both;
   }
+
+  /* A modal <dialog> popping in over a fading backdrop. */
+  .animate-dialog-in {
+    animation: dialog-in 180ms ease-out both;
+  }
+
+  .animate-dialog-in::backdrop {
+    animation: fade-in 180ms ease-out both;
+  }
 }
 
 /* Start-workout hint: the glow swells and brightens... */
@@ -106,12 +115,31 @@
   }
 }
 
+@keyframes dialog-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .animate-drift,
   .animate-drift-slow,
   .animate-hint-breathe,
   .animate-hint-nudge,
-  .animate-page-enter {
+  .animate-page-enter,
+  .animate-dialog-in,
+  .animate-dialog-in::backdrop {
     animation: none;
   }
 }

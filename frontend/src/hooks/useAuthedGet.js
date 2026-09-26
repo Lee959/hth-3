@@ -14,6 +14,18 @@ const CACHE_PREFIX = 'authedGet:'
 // anyway (it loads again once the save is done).
 const SAVE_WAIT_MS = 10000
 
+// The load function of every mounted useAuthedGet, for refreshAuthedData.
+const loaders = new Set()
+
+/**
+ * Re-fetches everything useAuthedGet is showing, after a change that
+ * affects it (e.g. deleting a workout changes both the history list and
+ * the home page totals). Current data stays up until the new copy arrives.
+ */
+export function refreshAuthedData() {
+  for (const load of loaders) load()
+}
+
 function readCache(key) {
   try {
     const raw = sessionStorage.getItem(CACHE_PREFIX + key)
@@ -42,7 +54,7 @@ function writeCache(key, data) {
  *
  * Shows the last cached response right away (status 'ready') and replaces
  * it when the fresh one arrives; if that request fails, the cached data
- * stays up (ConnectionWarning tells the user the connection is down).
+ * stays up.
  *
  * Loads once any workout still saving (lib/workoutSaver.js) is saved, so
  * coming back from a workout shows it.
@@ -81,9 +93,11 @@ export function useAuthedGet(path) {
       clearTimeout(timer)
       load()
     })
+    loaders.add(load)
     return () => {
       cancelled = true
       clearTimeout(timer)
+      loaders.delete(load)
     }
   }, [path, isAuthenticated, isLoading, getAccessTokenSilently, configured, user?.sub])
 
