@@ -4,7 +4,7 @@ from ..extensions import db
 
 
 class VitalsReading(db.Model):
-    """One Presage vitals sample for a session.
+    """One vitals sample for a session, from local rPPG or Presage (`source`).
 
     Meant to become a TigerData/TimescaleDB hypertable partitioned on
     `recorded_at` (see backend/sql/create_hypertable.sql). Timescale requires
@@ -18,7 +18,7 @@ class VitalsReading(db.Model):
     id = db.Column(db.Integer, autoincrement=True, nullable=False)
     session_id = db.Column(db.Integer, db.ForeignKey("workout_sessions.id"), nullable=False)
     # Start of the video clip this reading was measured from (not when
-    # Presage's answer came back, which can be ~30s later), and the clip's
+    # the measurement came back, which can be seconds later), and the clip's
     # length: the reading describes [recorded_at, recorded_at + window_sec].
     recorded_at = db.Column(
         db.DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)

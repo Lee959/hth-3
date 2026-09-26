@@ -83,11 +83,34 @@ def test_bad_set_input_is_400(client, body, field):
     assert field in resp.get_json()["error"]
 
 
-def test_vitals_upload_without_presage_key_is_503(client):
+def test_vitals_upload_without_presage_key_measures_locally(client):
     sid = _start(client)
     resp = client.post(
         f"/api/vitals/{sid}/chunks",
         data={"chunk": (io.BytesIO(b"fake"), "chunk.webm")},
         content_type="multipart/form-data",
     )
-    assert resp.status_code == 503
+    # Not a real video, so the local rPPG engine can't measure anything.
+    assert resp.status_code == 422
+    assert "no heart rate measured" in resp.get_json()["error"]
+
+
+@pytest.mark.parametrize(
+    "body",
+    [{}, {"heart_rate_bpm": "fast"}, {"heart_rate_bpm": 400}, {"heart_rate_bpm": 80, "recorded_at": "yesterday"}],
+)
+def test_live_heart_rate_reading_is_validated(client, body):
+    sid = _start(client)
+    resp = client.post(f"/api/vitals/{sid}/readings", json=body)
+    assert resp.status_code == 400
+    assert "heart_rate_bpm" in resp.get_json()["error"]
+
+
+def test_live_heart_rate_reading_for_someone_elses_workout_is_404(client):
+    other = User(auth0_sub="auth0|someone-else")
+    db.session.add(other)
+    db.session.flush()
+    theirs = WorkoutSession(user_id=other.id, started_at=datetime(2026, 9, 26, tzinfo=timezone.utc))
+    db.session.add(theirs)
+    db.session.commit()
+    assert client.post(f"/api/vitals/{theirs.id}/readings", json={"heart_rate_bpm": 80}).status_code == 404

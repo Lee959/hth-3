@@ -25,7 +25,7 @@ function arcPath(startAngle, endAngle, radius) {
  * Garmin-watch-style heart rate dial: a 270° zone-colored arc (resting ->
  * max, blue -> red) with a tick marking the current reading, a zone label,
  * the raw bpm in the center, and a heart icon tinted to the current zone.
- * Heart rate comes from Presage (server-side, polled); `ASSUMED_MAX_HR` is
+ * Heart rate is measured live from the camera (useLiveHeartRate); `ASSUMED_MAX_HR` is
  * a placeholder until the app has a real user-configured max HR.
  */
 export default function HeartRateGauge({ heartRateBpm }) {

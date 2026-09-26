@@ -13,12 +13,14 @@ import { useAuth } from '../auth/AuthContext.jsx'
 import { useCamera } from '../hooks/useCamera.js'
 import { useExerciseTracker } from '../hooks/useExerciseTracker.js'
 import { usePoseDetection } from '../hooks/usePoseDetection.js'
-import { useVitalsUpload } from '../hooks/useVitalsUpload.js'
+import { useLiveHeartRate } from '../hooks/useLiveHeartRate.js'
 import { buildWorkoutSummary, stubSaveWorkoutSummary } from '../lib/workoutSummary.js'
 import { api, attachAuthToken } from '../services/api.js'
 
 // Placeholder goal until the app has a real user-configured target.
 const TARGET_REPS = 10
+// How often the live heart rate is saved (for the summary and dashboard).
+const SAVE_HEART_RATE_MS = 5000
 
 // Every HUD element here is a small, independently-positioned glass tile
 // (or a narrow stack of them) rather than full-width side panels, so the
@@ -43,6 +45,7 @@ export default function WorkoutSession() {
     reset,
     closeSet,
   } = useExerciseTracker(landmarks)
+  const heartRateBpm = useLiveHeartRate(videoRef, landmarks, { running: ready && !paused })
   const [sessionId, setSessionId] = useState(null)
   const [vitals, setVitals] = useState([])
   const [summary, setSummary] = useState(null)
@@ -73,17 +76,25 @@ export default function WorkoutSession() {
     startSession()
   }, [canSave])
 
-  // No uploads while the summary screen is up: that workout has ended.
-  useVitalsUpload(stream, sessionId, { enabled: ready && Boolean(sessionId) && !summary })
-
+  // Every few seconds, keep the live heart rate (newest first, like the
+  // backend's list) for the summary's average, and save it to the workout.
+  // Through a ref so the interval isn't reset by every new reading.
+  const heartRateRef = useRef(null)
+  heartRateRef.current = heartRateBpm
   useEffect(() => {
-    if (!sessionId) return undefined
     const interval = setInterval(() => {
-      api
-        .get(`/vitals/${sessionId}`)
-        .then((res) => setVitals(res.data))
-        .catch(() => {}) // keep the last readings; the next poll retries
-    }, 5000)
+      const bpm = heartRateRef.current
+      if (bpm == null) return
+      const reading = {
+        heart_rate_bpm: bpm,
+        recorded_at: new Date(Date.now() - SAVE_HEART_RATE_MS).toISOString(),
+        window_sec: SAVE_HEART_RATE_MS / 1000,
+      }
+      setVitals((prev) => [reading, ...prev])
+      if (sessionId) {
+        api.post(`/vitals/${sessionId}/readings`, reading).catch((err) => console.error('could not save heart rate', err))
+      }
+    }, SAVE_HEART_RATE_MS)
     return () => clearInterval(interval)
   }, [sessionId])
 
@@ -178,7 +189,7 @@ export default function WorkoutSession() {
           the bottom controls/banner on short viewports — 5 tiles in the right
           column made this a real problem on mobile, not just a desktop nicety. */}
       <div className="absolute left-4 top-1/2 z-10 max-h-[62vh] -translate-y-1/2 overflow-y-auto">
-        <MetricsSidebar vitals={vitals} />
+        <MetricsSidebar vitals={vitals} heartRateBpm={heartRateBpm} />
       </div>
 
       {/* Right: exercise title, muscle map, rep count, rep goal — one vertical
