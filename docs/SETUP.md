@@ -84,7 +84,7 @@ banner and login disabled — that's expected until step 3.
    - Copy the **Domain** and **Client ID** into `frontend/.env`
      (`VITE_AUTH0_DOMAIN`, `VITE_AUTH0_CLIENT_ID`).
 3. **Applications → APIs → Create API.**
-   - Set an Identifier, e.g. `https://api.formcheck.dev` (doesn't need to
+   - Set an Identifier, e.g. `https://api.accountable.dev` (doesn't need to
      be a real URL, just a unique string) — this is the **audience**.
    - Put that same value in `frontend/.env` (`VITE_AUTH0_AUDIENCE`) and
      `backend/.env` (`AUTH0_AUDIENCE`).

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 
-const PREF_KEY = 'exercist:camera-backdrop'
+const PREF_KEY = 'accountable:camera-backdrop'
 
 function readPref() {
   try {
