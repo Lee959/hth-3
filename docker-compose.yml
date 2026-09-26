@@ -1,0 +1,15 @@
+services:
+  timescaledb:
+    image: timescale/timescaledb-ha:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: hth3
+      POSTGRES_PASSWORD: hth3dev
+      POSTGRES_DB: hth3_dev
+    ports:
+      - "5432:5432"
+    volumes:
+      - timescale_data:/home/postgres/pgdata/data
+
+volumes:
+  timescale_data:
