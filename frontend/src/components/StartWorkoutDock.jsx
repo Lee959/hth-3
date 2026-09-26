@@ -152,23 +152,35 @@ export default function StartWorkoutDock() {
 
       {/* Hover/focus: the button grows ~5% with a slight spring overshoot
           while the halo behind it blooms wider and brighter. Reduced motion
-          keeps the glow change but drops the movement. */}
+          keeps the glow change but drops the movement.
+
+          The link only slides; the halo and the glass fade on their own.
+          Fading the link itself would make it the glass's backdrop root
+          (any ancestor with opacity < 1 is), so the glass would show clear
+          the whole way up and then snap to frosted as the fade finished.
+          Fading the glass element itself fades its frost in with it. */}
       <Link
         to="/session"
         tabIndex={shown ? 0 : -1}
         aria-hidden={!shown}
         onFocus={() => setRevealed(true)}
-        className={`group relative rounded-full transition-[transform,opacity] duration-500 ease-[cubic-bezier(0.34,1.56,0.64,1)] focus-visible:outline-none motion-reduce:transition-opacity ${
+        className={`group relative rounded-full transition-transform duration-500 ease-[cubic-bezier(0.34,1.56,0.64,1)] focus-visible:outline-none motion-reduce:transition-none ${
           shown
-            ? 'pointer-events-auto translate-y-0 opacity-100'
-            : 'pointer-events-none translate-y-[calc(100%+2rem)] opacity-0 motion-reduce:translate-y-0'
+            ? 'pointer-events-auto translate-y-0'
+            : 'pointer-events-none translate-y-[calc(100%+2rem)] motion-reduce:translate-y-0'
         }`}
       >
         <span
           aria-hidden="true"
-          className="absolute -inset-5 rounded-full bg-gradient-to-r from-rose-500/40 via-fuchsia-500/30 to-teal-400/30 opacity-70 blur-2xl transition-[opacity,transform,filter] duration-500 ease-out group-hover:scale-125 group-hover:opacity-100 group-hover:blur-3xl group-hover:saturate-150 group-focus-visible:scale-125 group-focus-visible:opacity-100 group-focus-visible:blur-3xl motion-reduce:group-hover:scale-100 motion-reduce:group-focus-visible:scale-100"
-        />
-        <span className="liquid-glass relative flex items-center gap-4 rounded-full py-2.5 pl-2.5 pr-8 shadow-[0_20px_50px_-12px_rgba(0,0,0,0.8)] transition-[transform,box-shadow,border-color] duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)] group-hover:-translate-y-1 group-hover:scale-105 group-hover:border-white/35 group-hover:shadow-[0_24px_60px_-10px_rgba(0,0,0,0.85),0_0_40px_-6px_rgba(244,63,94,0.55)] group-focus-visible:-translate-y-1 group-focus-visible:scale-105 group-focus-visible:border-white/60 motion-reduce:group-hover:translate-y-0 motion-reduce:group-hover:scale-100 motion-reduce:group-focus-visible:translate-y-0 motion-reduce:group-focus-visible:scale-100">
+          className={`absolute inset-0 transition-opacity duration-500 ease-out ${shown ? 'opacity-100' : 'opacity-0'}`}
+        >
+          <span className="absolute -inset-5 rounded-full bg-gradient-to-r from-rose-500/40 via-fuchsia-500/30 to-teal-400/30 opacity-70 blur-2xl transition-[opacity,transform,filter] duration-500 ease-out group-hover:scale-125 group-hover:opacity-100 group-hover:blur-3xl group-hover:saturate-150 group-focus-visible:scale-125 group-focus-visible:opacity-100 group-focus-visible:blur-3xl motion-reduce:group-hover:scale-100 motion-reduce:group-focus-visible:scale-100" />
+        </span>
+        <span
+          className={`liquid-glass relative flex items-center gap-4 rounded-full py-2.5 pl-2.5 pr-8 shadow-[0_20px_50px_-12px_rgba(0,0,0,0.8)] transition-[transform,box-shadow,border-color,opacity] duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)] ${
+            shown ? 'opacity-100' : 'opacity-0'
+          } group-hover:-translate-y-1 group-hover:scale-105 group-hover:border-white/35 group-hover:shadow-[0_24px_60px_-10px_rgba(0,0,0,0.85),0_0_40px_-6px_rgba(244,63,94,0.55)] group-focus-visible:-translate-y-1 group-focus-visible:scale-105 group-focus-visible:border-white/60 motion-reduce:group-hover:translate-y-0 motion-reduce:group-hover:scale-100 motion-reduce:group-focus-visible:translate-y-0 motion-reduce:group-focus-visible:scale-100`}
+        >
           <span className="flex h-12 w-12 items-center justify-center rounded-full bg-white text-slate-900 shadow-[0_0_30px_rgba(255,255,255,0.45)] transition duration-300 group-hover:scale-110 group-hover:shadow-[0_0_44px_rgba(255,255,255,0.75)] group-focus-visible:scale-110 motion-reduce:group-hover:scale-100 motion-reduce:group-focus-visible:scale-100">
             <PlayIcon className="h-6 w-6" />
           </span>

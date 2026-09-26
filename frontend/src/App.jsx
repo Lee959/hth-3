@@ -59,7 +59,7 @@ export default function App() {
     <div className="relative flex h-screen flex-col overflow-hidden bg-[#07060d] text-slate-100">
       {!immersive && (
         <>
-          <AmbientBackground stream={camera.stream} />
+          <AmbientBackground stream={camera.stream} vivid={location.pathname === '/dashboard'} />
           <header className="relative z-10 flex flex-wrap items-center justify-between gap-3 p-4 md:flex-nowrap md:gap-4 md:px-8 md:pt-6">
             <Link
               to="/"

@@ -164,7 +164,7 @@ def summary():
     )
 
     # One query for every heart-rate reading, grouped per session as
-    # (seconds into the workout, bpm) points.
+    # (seconds into the workout, whole bpm) points.
     traces: dict = {s.id: [] for s in sessions}
     started = {s.id: s.started_at for s in sessions}
     if sessions:
@@ -176,7 +176,7 @@ def summary():
         for r in readings:
             if r.heart_rate_bpm is not None and started[r.session_id]:
                 t = (r.recorded_at - started[r.session_id]).total_seconds()
-                traces[r.session_id].append((t, r.heart_rate_bpm))
+                traces[r.session_id].append((t, round(r.heart_rate_bpm)))
     all_bpm = [bpm for points in traces.values() for _, bpm in points]
     max_hr = max([effort.DEFAULT_MAX_HR, *all_bpm])
 

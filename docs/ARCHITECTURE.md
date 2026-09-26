@@ -328,10 +328,10 @@ session's flat black:
   left (retrying a few times) before `POST /workouts/:id/end`. That final
   save is tracked in `services/api.js` (`trackSave`/`whenSaved`), and
   `useAuthedGet` waits for it (up to 10 s, then loads again when it's
-  done), so going Home right away shows the workout just finished.
+  done), so opening the Dashboard right away shows the workout just finished.
 - **"New Workout"** clears the summary and starts a fresh saver without
-  leaving `/session` (stays in the immersive view); **"Home"** navigates
-  back to `/` via the existing back-button route.
+  leaving `/session` (stays in the immersive view); **"Dashboard"** goes
+  to `/dashboard`, where the workout just finished shows up.
 
 ## Design: "Liquid Glass"
 

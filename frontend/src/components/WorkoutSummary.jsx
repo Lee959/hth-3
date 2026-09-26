@@ -139,10 +139,10 @@ export default function WorkoutSummary({ summary, onDone, stream }) {
 
         <div className="flex w-full gap-3">
           <Link
-            to="/"
+            to="/dashboard"
             className="liquid-glass flex-1 rounded-full py-3 text-center font-rajdhani text-sm font-bold uppercase tracking-wide text-white transition hover:border-white/35"
           >
-            Home
+            Dashboard
           </Link>
           <button
             type="button"
