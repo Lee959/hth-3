@@ -91,11 +91,14 @@ export default function HeartRateChart({ points, color = '#f43f5e' }) {
       onPointerLeave={() => setActive(null)}
       onKeyDown={onKeyDown}
       onBlur={() => setActive(null)}
-      className="relative w-full touch-pan-y rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-white/40"
+      className="relative w-full touch-pan-y overflow-hidden rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-white/40"
       style={{ height: HEIGHT }}
     >
       {width > 0 && (
-        <svg width={width} height={HEIGHT} className="block overflow-visible">
+        // Absolutely positioned so its measured pixel width never feeds back
+        // into the card's size: otherwise, after the screen narrows, the old
+        // wide svg holds the whole grid column open and the cards overflow.
+        <svg width={width} height={HEIGHT} className="absolute left-0 top-0 block overflow-visible">
           {yTicks.map((v) => (
             <g key={v}>
               <line x1={MARGIN.left} x2={width - MARGIN.right} y1={y(v)} y2={y(v)} stroke="rgba(255,255,255,0.08)" />

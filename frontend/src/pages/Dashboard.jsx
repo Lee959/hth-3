@@ -106,7 +106,7 @@ function StatTile({ label, value, unit, note }) {
 
 function Card({ title, subtitle, aside, className = '', children }) {
   return (
-    <section className={`liquid-glass flex flex-col rounded-3xl p-5 md:p-6 ${className}`}>
+    <section className={`liquid-glass flex min-w-0 flex-col rounded-3xl p-5 md:p-6 ${className}`}>
       <div className="mb-4 flex flex-wrap items-start justify-between gap-x-4 gap-y-1">
         <div>
           <h2 className="font-rajdhani text-lg font-bold uppercase tracking-wide text-white">{title}</h2>
@@ -322,13 +322,13 @@ export default function Dashboard() {
           <StatTile label="Avg heart rate" value={formatNumber(s.avg_heart_rate_bpm)} unit="bpm" />
         </div>
 
-        <div className="mt-4 grid gap-4 lg:grid-cols-3">
+        <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
           <FormScoreCard form={s.form} />
           <EffortScoreCard effort={s.effort} />
           <MovementQualityCard movement={s.movement} rows={s.reps_by_exercise} />
         </div>
 
-        <div className="mt-4 grid gap-4 lg:grid-cols-3">
+        <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
           <Card
             title="Heart rate"
             subtitle="During your latest workout"

@@ -17,7 +17,10 @@ export default function RepsByExerciseChart({ rows, color = '#10a898' }) {
   const max = Math.max(...rows.map((r) => r.reps), 1)
   const total = rows.reduce((sum, r) => sum + r.reps, 0)
   const showForm = rows.some((r) => r.form_score != null)
-  const columns = showForm ? 'grid-cols-[8rem_1fr_3rem]' : 'grid-cols-[8rem_1fr]'
+  // Narrower name column on phones so the bars keep most of the width.
+  const columns = showForm
+    ? 'grid-cols-[6rem_1fr_2.5rem] sm:grid-cols-[8rem_1fr_3rem]'
+    : 'grid-cols-[6rem_1fr] sm:grid-cols-[8rem_1fr]'
 
   return (
     <ul className="flex flex-col gap-3">
@@ -44,13 +47,13 @@ export default function RepsByExerciseChart({ rows, color = '#10a898' }) {
             }`}
             className={`grid ${columns} items-center gap-3 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-white/40`}
           >
-            <span className="truncate font-rajdhani text-sm font-semibold uppercase tracking-wide text-white/70">
+            <span className="truncate font-rajdhani text-xs font-semibold uppercase tracking-wide text-white/70 sm:text-sm">
               {prettify(row.exercise)}
             </span>
             {/* Right padding reserves room for the value label, so bar
                 lengths stay proportional to each other and the label at the
                 longest bar's tip never overflows the card. */}
-            <span className="flex min-w-0 items-center gap-2 pr-[5.5rem]">
+            <span className="flex min-w-0 items-center gap-2 pr-10 sm:pr-[5.5rem]">
               <span
                 className="h-4 shrink-0 rounded-r transition-[filter,width] duration-300"
                 style={{
@@ -61,7 +64,9 @@ export default function RepsByExerciseChart({ rows, color = '#10a898' }) {
               />
               <span className="whitespace-nowrap font-rajdhani text-sm font-bold text-white">
                 {row.reps}
-                {isActive && <span className="ml-1.5 font-light text-white/50">· {share}%</span>}
+                {/* Share-of-total only fits beside the count on wider screens;
+                    phones still get it through the row's accessible label. */}
+                {isActive && <span className="ml-1.5 hidden font-light text-white/50 sm:inline">· {share}%</span>}
               </span>
             </span>
             {showForm && (
