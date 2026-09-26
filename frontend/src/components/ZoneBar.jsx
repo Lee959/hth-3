@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
 
 // One hue, dim -> bright as intensity rises (validated as an ordinal ramp
 // against the dark glass surface). Zone ranges mirror the backend's
@@ -19,15 +19,38 @@ function formatMinutes(m) {
  * Time in each heart-rate zone as one stacked bar (2px surface gaps between
  * segments, per-segment hover/focus readout) plus a legend that carries
  * the minutes, so nothing depends on hovering or on telling colors apart.
+ *
+ * The readout centers over whichever segment is hovered or focused, with a
+ * small arrow pointing at it, and slides inward rather than spilling past
+ * the bar's ends when that segment sits near an edge.
  */
 export default function ZoneBar({ minutes }) {
+  // { index, center }: the hovered zone and its segment's midpoint (px from
+  // the bar's left edge).
   const [active, setActive] = useState(null)
+  const barRef = useRef(null)
+  const tipRef = useRef(null)
+  const [tipLeft, setTipLeft] = useState(0)
+
+  // Once the readout has rendered (so its width is known), clamp it inside
+  // the bar while keeping it as close to centered on the segment as it can.
+  useLayoutEffect(() => {
+    if (!active || !tipRef.current || !barRef.current) return
+    const tipWidth = tipRef.current.offsetWidth
+    const barWidth = barRef.current.offsetWidth
+    setTipLeft(Math.max(0, Math.min(active.center - tipWidth / 2, barWidth - tipWidth)))
+  }, [active])
+
   const total = minutes.reduce((a, b) => a + b, 0)
   if (!total) return null
 
+  function activate(index, segment) {
+    setActive({ index, center: segment.offsetLeft + segment.offsetWidth / 2 })
+  }
+
   return (
     <div>
-      <div className="relative">
+      <div ref={barRef} className="relative">
         <div className="flex h-3 gap-0.5 overflow-hidden rounded">
           {ZONES.map((zone, i) =>
             minutes[i] > 0 ? (
@@ -35,26 +58,38 @@ export default function ZoneBar({ minutes }) {
                 key={zone.name}
                 tabIndex={0}
                 aria-label={`${zone.name} (${zone.range} of max): ${formatMinutes(minutes[i])}`}
-                onPointerEnter={() => setActive(i)}
+                onPointerEnter={(e) => activate(i, e.currentTarget)}
                 onPointerLeave={() => setActive(null)}
-                onFocus={() => setActive(i)}
+                onFocus={(e) => activate(i, e.currentTarget)}
                 onBlur={() => setActive(null)}
                 className="h-full outline-none transition-[filter] focus-visible:brightness-125"
                 style={{
                   flexGrow: minutes[i],
                   backgroundColor: zone.color,
-                  filter: active === i ? 'brightness(1.25)' : undefined,
+                  filter: active?.index === i ? 'brightness(1.25)' : undefined,
                 }}
               />
             ) : null,
           )}
         </div>
-        {active != null && (
-          <div className="pointer-events-none absolute -top-2 left-1/2 -translate-x-1/2 -translate-y-full whitespace-nowrap rounded-lg border border-white/15 bg-[#1d1724]/90 px-2.5 py-1.5 shadow-lg backdrop-blur-md">
-            <p className="font-rajdhani text-sm font-bold leading-tight text-white">{formatMinutes(minutes[active])}</p>
-            <p className="font-rajdhani text-[11px] font-light text-white/60">
-              {ZONES[active].name} · {ZONES[active].range} of max
+        {active && (
+          <div
+            ref={tipRef}
+            className="pointer-events-none absolute -top-2.5 -translate-y-full whitespace-nowrap rounded-lg border border-white/15 bg-[#1d1724]/90 px-2.5 py-1.5 shadow-lg backdrop-blur-md"
+            style={{ left: tipLeft }}
+          >
+            <p className="font-rajdhani text-sm font-bold leading-tight text-white">
+              {formatMinutes(minutes[active.index])}
             </p>
+            <p className="font-rajdhani text-[11px] font-light text-white/60">
+              {ZONES[active.index].name} · {ZONES[active.index].range} of max
+            </p>
+            {/* Arrow pointing down at the segment's midpoint. */}
+            <span
+              aria-hidden="true"
+              className="absolute top-full h-2 w-2 -translate-x-1/2 -translate-y-1 rotate-45 border-b border-r border-white/15 bg-[#1d1724]"
+              style={{ left: active.center - tipLeft }}
+            />
           </div>
         )}
       </div>
