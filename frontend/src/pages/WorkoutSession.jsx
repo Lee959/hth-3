@@ -41,6 +41,7 @@ export default function WorkoutSession() {
     totalRestMs,
     completedSets,
     reset,
+    closeSet,
   } = useExerciseTracker(landmarks)
   const [sessionId, setSessionId] = useState(null)
   const [vitals, setVitals] = useState([])
@@ -66,18 +67,29 @@ export default function WorkoutSession() {
     return () => clearInterval(interval)
   }, [sessionId])
 
+  function saveSet(set) {
+    if (!sessionId || !set) return
+    api.post(`/workouts/${sessionId}/sets`, {
+      exercise_name: set.exerciseName,
+      reps: set.reps,
+      // Averaged per-rep movement quality (see lib/repQuality.js).
+      ...set.quality,
+    })
+  }
+
   // Persist each completed set as it closes (see useExerciseTracker's
   // resting-phase transition) through the existing set-logging endpoint.
   useEffect(() => {
-    if (!sessionId || completedSets.length === 0) return
-    const latest = completedSets[completedSets.length - 1]
-    api.post(`/workouts/${sessionId}/sets`, {
-      exercise_name: latest.exerciseName,
-      reps: latest.reps,
-    })
+    if (completedSets.length === 0) return
+    saveSet(completedSets[completedSets.length - 1])
   }, [sessionId, completedSets.length])
 
+  // Closes and saves a set that's still in progress before clearing the
+  // tracker, so ending mid-set never throws away logged reps. It's saved
+  // directly here: reset() empties completedSets in the same batched
+  // update, so the effect above never sees it (and can't double-save it).
   function handleEndSession() {
+    saveSet(closeSet())
     if (sessionId) api.post(`/workouts/${sessionId}/end`)
     // Snapshot everything the summary screen needs BEFORE reset() clears
     // the tracker's completedSets/totalRestMs.

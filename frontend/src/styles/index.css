@@ -2,15 +2,13 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Ported from dev/metrics-board (its Dashboard redesign) for
-   WorkoutSummary.jsx's "Workout Saved" screen — see that component. */
 @layer components {
   /*
-   * "Liquid glass" — a richer take on GlassTile.jsx's flat white/10 surface:
-   * a diagonal sheen instead of a flat fill, saturated blur so the ambient
-   * colors behind it glow through, and an inner top highlight + faint
-   * bottom edge so the tile reads as a curved, light-catching slab rather
-   * than a flat pane.
+   * "Liquid glass" — a richer take on GlassTile.jsx's flat white/10 surface
+   * for the non-immersive pages: a diagonal sheen instead of a flat fill,
+   * saturated blur so the ambient colors behind it glow through, and an
+   * inner top highlight + faint bottom edge so the tile reads as a
+   * curved, light-catching slab rather than a flat pane.
    */
   .liquid-glass {
     position: relative;
@@ -45,6 +43,38 @@
   .animate-drift-slow {
     animation: drift 30s ease-in-out infinite alternate-reverse;
   }
+
+  .animate-hint-breathe {
+    animation: hint-breathe 2.4s ease-in-out infinite;
+  }
+
+  .animate-hint-nudge {
+    animation: hint-nudge 1.6s ease-in-out infinite;
+  }
+}
+
+/* Start-workout hint: the glow swells and brightens... */
+@keyframes hint-breathe {
+  0%,
+  100% {
+    opacity: 0.55;
+    transform: scale(0.95);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.12);
+  }
+}
+
+/* ...and its arrow nudges upward, pointing at where the button will rise. */
+@keyframes hint-nudge {
+  0%,
+  100% {
+    transform: translateY(1px);
+  }
+  50% {
+    transform: translateY(-3px);
+  }
 }
 
 @keyframes drift {
@@ -61,7 +91,9 @@
 
 @media (prefers-reduced-motion: reduce) {
   .animate-drift,
-  .animate-drift-slow {
+  .animate-drift-slow,
+  .animate-hint-breathe,
+  .animate-hint-nudge {
     animation: none;
   }
 }

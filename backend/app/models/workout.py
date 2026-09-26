@@ -32,6 +32,12 @@ class ExerciseSet(db.Model):
     muscle_groups = db.Column(db.JSON, default=list)
     reps = db.Column(db.Integer, default=0)
     form_score = db.Column(db.Float, nullable=True)
+    # Movement-quality averages over the set's reps (see the frontend's
+    # lib/repQuality.js for how each is scored): range of motion and
+    # left/right symmetry as 0-100 percentages, tempo as seconds per rep.
+    range_of_motion = db.Column(db.Float, nullable=True)
+    symmetry = db.Column(db.Float, nullable=True)
+    avg_rep_seconds = db.Column(db.Float, nullable=True)
     recorded_at = db.Column(db.DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     def to_dict(self) -> dict:
@@ -42,5 +48,8 @@ class ExerciseSet(db.Model):
             "muscle_groups": self.muscle_groups,
             "reps": self.reps,
             "form_score": self.form_score,
+            "range_of_motion": self.range_of_motion,
+            "symmetry": self.symmetry,
+            "avg_rep_seconds": self.avg_rep_seconds,
             "recorded_at": self.recorded_at.isoformat() if self.recorded_at else None,
         }

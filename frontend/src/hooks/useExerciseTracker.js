@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import { LANDMARKS, angleAt, ema, midpoint } from '../lib/poseMath.js'
 import { LOAD_PER_REP, muscleWeightsFor } from '../lib/muscleMap.js'
 import { RepCounter } from '../lib/repCounter.js'
+import { repSeconds, scoreRep, summarizeReps } from '../lib/repQuality.js'
 
 const MIN_RANGE_DEG = 25 // degrees of swing required to flag a joint as a movement candidate
 
@@ -96,6 +97,15 @@ function angleAndBufFor(name, angles, buffers) {
   return map[key]
 }
 
+// Which joint's left/right pair belongs to each exercise, for per-rep
+// symmetry scoring.
+function jointFor(name) {
+  if (name === 'push_up' || name === 'bicep_curl') return 'elbow'
+  if (name === 'squat') return 'knee'
+  if (name === 'jumping_jack') return 'shoulder'
+  return 'hipFlex'
+}
+
 function pushTimed(buf, value, time, maxAgeMs) {
   buf.push({ value, time })
   while (buf.length > 1 && time - buf[0].time > maxAgeMs) buf.shift()
@@ -177,6 +187,14 @@ function freshCounters() {
  *
  * Speed/acceleration are in *relative* units (fraction of frame size per
  * second) — real signal, but not calibrated to real-world meters.
+ *
+ * Every counted rep is also scored for movement quality (range of motion,
+ * left/right symmetry, tempo -> form score; see lib/repQuality.js) from the
+ * extremes and side-to-side difference of the exercise's angle since the
+ * previous rep. When a set closes, its reps' averages ride along on the
+ * set as `quality` (the fields POST /api/workouts/:id/sets stores).
+ * `closeSet()` closes an in-progress set on demand — ending or resetting a
+ * session mid-set — so that set isn't lost.
  */
 export function useExerciseTracker(landmarks) {
   const buffers = useRef({ knee: [], elbow: [], shoulder: [], hipFlex: [] })
@@ -195,6 +213,12 @@ export function useExerciseTracker(landmarks) {
   // see the pending->active graduation branch below, the only place a rest
   // period ends). Not reset by a mid-set correction, only by `reset()`.
   const totalRestMs = useRef(0)
+  // Per-rep quality: angle extremes + left/right difference for the rep in
+  // progress, when each exercise last completed a rep (for tempo), and the
+  // scored reps of the set in progress.
+  const repWindow = useRef(null)
+  const lastRepAt = useRef({})
+  const setReps = useRef([])
 
   const [state, setState] = useState({
     phase: 'resting',
@@ -221,6 +245,9 @@ export function useExerciseTracker(landmarks) {
     motion.current = { lastPoint: null, lastTime: null, velocity: 0, accel: 0, peakAccel: 0 }
     lastDecayTime.current = null
     totalRestMs.current = 0
+    repWindow.current = null
+    lastRepAt.current = {}
+    setReps.current = []
     setState({
       phase: 'resting',
       exerciseName: null,
@@ -232,6 +259,45 @@ export function useExerciseTracker(landmarks) {
       totalRestMs: 0,
       completedSets: [],
     })
+  }
+
+  // Closes the active set (if any): logs it into `completedSets` — with its
+  // reps' averaged movement quality — and drops into resting. Returns the
+  // logged set, or null if there was nothing with reps to log.
+  function closeActiveSet(now) {
+    const finishedExercise = activeExercise.current
+    let finishedSet = null
+    if (finishedExercise) {
+      const finishedReps = counters.current[finishedExercise].reps
+      if (finishedReps > 0) {
+        // The counter's rep count is authoritative; summarizeReps only
+        // supplies the averaged quality fields.
+        const { form_score, range_of_motion, symmetry, avg_rep_seconds } = summarizeReps(setReps.current)
+        finishedSet = {
+          exerciseName: finishedExercise,
+          reps: finishedReps,
+          completedAt: Date.now(),
+          quality: { form_score, range_of_motion, symmetry, avg_rep_seconds },
+        }
+        completedSets.current = [...completedSets.current, finishedSet]
+      }
+    }
+    phase.current = 'resting'
+    activeExercise.current = null
+    lastActiveAt.current = null
+    restStartedAt.current = now
+    scores.current = {}
+    setReps.current = []
+    repWindow.current = null
+    return finishedSet
+  }
+
+  /** Closes a set in progress right now (ending or resetting mid-set); returns it, or null. */
+  function closeSet() {
+    if (phase.current !== 'active') return null
+    const finishedSet = closeActiveSet(performance.now())
+    setState((prev) => ({ ...prev, phase: 'resting', exerciseName: null, reps: 0, completedSets: completedSets.current }))
+    return finishedSet
   }
 
   // Ticks the rest stopwatch on its own timer instead of piggybacking on
@@ -267,24 +333,27 @@ export function useExerciseTracker(landmarks) {
     }
     lastDecayTime.current = now
 
-    const angles = {
-      knee:
-        (angleAt(landmarks, LANDMARKS.LEFT_HIP, LANDMARKS.LEFT_KNEE, LANDMARKS.LEFT_ANKLE) +
-          angleAt(landmarks, LANDMARKS.RIGHT_HIP, LANDMARKS.RIGHT_KNEE, LANDMARKS.RIGHT_ANKLE)) /
-        2,
-      elbow:
-        (angleAt(landmarks, LANDMARKS.LEFT_SHOULDER, LANDMARKS.LEFT_ELBOW, LANDMARKS.LEFT_WRIST) +
-          angleAt(landmarks, LANDMARKS.RIGHT_SHOULDER, LANDMARKS.RIGHT_ELBOW, LANDMARKS.RIGHT_WRIST)) /
-        2,
-      shoulder:
-        (angleAt(landmarks, LANDMARKS.LEFT_HIP, LANDMARKS.LEFT_SHOULDER, LANDMARKS.LEFT_ELBOW) +
-          angleAt(landmarks, LANDMARKS.RIGHT_HIP, LANDMARKS.RIGHT_SHOULDER, LANDMARKS.RIGHT_ELBOW)) /
-        2,
-      hipFlex:
-        (angleAt(landmarks, LANDMARKS.LEFT_KNEE, LANDMARKS.LEFT_HIP, LANDMARKS.LEFT_SHOULDER) +
-          angleAt(landmarks, LANDMARKS.RIGHT_KNEE, LANDMARKS.RIGHT_HIP, LANDMARKS.RIGHT_SHOULDER)) /
-        2,
+    // Left and right kept separate (not just averaged) so each rep's
+    // left/right symmetry can be scored; `angles` is their average.
+    const sides = {
+      knee: [
+        angleAt(landmarks, LANDMARKS.LEFT_HIP, LANDMARKS.LEFT_KNEE, LANDMARKS.LEFT_ANKLE),
+        angleAt(landmarks, LANDMARKS.RIGHT_HIP, LANDMARKS.RIGHT_KNEE, LANDMARKS.RIGHT_ANKLE),
+      ],
+      elbow: [
+        angleAt(landmarks, LANDMARKS.LEFT_SHOULDER, LANDMARKS.LEFT_ELBOW, LANDMARKS.LEFT_WRIST),
+        angleAt(landmarks, LANDMARKS.RIGHT_SHOULDER, LANDMARKS.RIGHT_ELBOW, LANDMARKS.RIGHT_WRIST),
+      ],
+      shoulder: [
+        angleAt(landmarks, LANDMARKS.LEFT_HIP, LANDMARKS.LEFT_SHOULDER, LANDMARKS.LEFT_ELBOW),
+        angleAt(landmarks, LANDMARKS.RIGHT_HIP, LANDMARKS.RIGHT_SHOULDER, LANDMARKS.RIGHT_ELBOW),
+      ],
+      hipFlex: [
+        angleAt(landmarks, LANDMARKS.LEFT_KNEE, LANDMARKS.LEFT_HIP, LANDMARKS.LEFT_SHOULDER),
+        angleAt(landmarks, LANDMARKS.RIGHT_KNEE, LANDMARKS.RIGHT_HIP, LANDMARKS.RIGHT_SHOULDER),
+      ],
     }
+    const angles = Object.fromEntries(Object.entries(sides).map(([joint, [l, r]]) => [joint, (l + r) / 2]))
 
     pushTimed(buffers.current.knee, angles.knee, now, CLASSIFY_WINDOW_MS)
     pushTimed(buffers.current.elbow, angles.elbow, now, CLASSIFY_WINDOW_MS)
@@ -327,33 +396,51 @@ export function useExerciseTracker(landmarks) {
     }
 
     // Generic so it can drive either the committed active-phase counter/
-    // scores (counters.current/scores.current) or a pending candidate's own
-    // provisional counter/scores while it's still being confirmed.
-    function updateRepAndScore(counter, scoresObj, exerciseName, angle) {
+    // scores/scored reps (counters.current/scores.current/setReps.current)
+    // or a pending candidate's own provisional ones while it's still being
+    // confirmed.
+    function updateRepAndScore(counter, scoresObj, exerciseName, angle, scoredReps) {
+      // A different exercise starts a fresh quality window, seeded from the
+      // last ~1s of that joint's angles so the first rep's range isn't cut
+      // short by however long detection took to lock on.
+      const joint = jointFor(exerciseName)
+      if (repWindow.current?.exerciseName !== exerciseName) {
+        const recent = buffers.current[joint].map((entry) => entry.value)
+        repWindow.current = {
+          exerciseName,
+          minAngle: Math.min(angle, ...recent),
+          maxAngle: Math.max(angle, ...recent),
+          diffSum: 0,
+          diffCount: 0,
+        }
+      }
+      const win = repWindow.current
+      win.minAngle = Math.min(win.minAngle, angle)
+      win.maxAngle = Math.max(win.maxAngle, angle)
+      win.diffSum += Math.abs(sides[joint][0] - sides[joint][1])
+      win.diffCount += 1
+
       const previousReps = counter.reps
       const reps = counter.update(angle)
       if (reps > previousReps) {
         for (const [muscle, weight] of Object.entries(muscleWeightsFor(exerciseName))) {
           scoresObj[muscle] = Math.min(100, (scoresObj[muscle] ?? 0) + LOAD_PER_REP * weight)
         }
+        const scored = scoreRep(exerciseName, {
+          minAngle: win.minAngle,
+          maxAngle: win.maxAngle,
+          sideDiffAvg: win.diffCount ? win.diffSum / win.diffCount : 0,
+          seconds: repSeconds(exerciseName, lastRepAt.current[exerciseName], now),
+        })
+        if (scored) scoredReps.push(scored)
+        lastRepAt.current[exerciseName] = now
+        repWindow.current = { exerciseName, minAngle: angle, maxAngle: angle, diffSum: 0, diffCount: 0 }
       }
       return reps
     }
 
     function finishActiveSet() {
-      const finishedExercise = activeExercise.current
-      const finishedReps = counters.current[finishedExercise].reps
-      if (finishedReps > 0) {
-        completedSets.current = [
-          ...completedSets.current,
-          { exerciseName: finishedExercise, reps: finishedReps, completedAt: Date.now() },
-        ]
-      }
-      phase.current = 'resting'
-      activeExercise.current = null
-      lastActiveAt.current = null
-      restStartedAt.current = now
-      scores.current = {}
+      closeActiveSet(now)
     }
 
     if (phase.current === 'active') {
@@ -367,7 +454,13 @@ export function useExerciseTracker(landmarks) {
       // this is what lets someone breathe between reps instead of having to
       // chain them with zero gap to avoid falling into rest.
       if (isSwinging || idleFor < REST_DELAY_MS) {
-        const reps = updateRepAndScore(counters.current[activeExercise.current], scores.current, activeExercise.current, angle)
+        const reps = updateRepAndScore(
+          counters.current[activeExercise.current],
+          scores.current,
+          activeExercise.current,
+          angle,
+          setReps.current,
+        )
         updateMotion(trackedPointFor(activeExercise.current))
         setState({
           phase: 'active',
@@ -392,7 +485,7 @@ export function useExerciseTracker(landmarks) {
       const { exerciseName, counter } = pending.current
       const { angle } = angleAndBufFor(exerciseName, angles, buffers.current)
       const stateBefore = counter.state
-      updateRepAndScore(counter, pending.current.scores, exerciseName, angle)
+      updateRepAndScore(counter, pending.current.scores, exerciseName, angle, pending.current.scoredReps)
 
       const reachedGenuineRange = counter.state === EXERTION_STATE[exerciseName] && stateBefore !== counter.state
 
@@ -407,6 +500,7 @@ export function useExerciseTracker(landmarks) {
         lastActiveAt.current = now
         counters.current[exerciseName] = counter
         scores.current = pending.current.scores
+        setReps.current = pending.current.scoredReps
         restStartedAt.current = null
         pending.current = null
         updateMotion(trackedPointFor(exerciseName))
@@ -428,6 +522,7 @@ export function useExerciseTracker(landmarks) {
         // Never reached a genuine range of motion within the window —
         // discard it entirely, as if it never happened.
         pending.current = null
+        repWindow.current = null
       }
     }
 
@@ -459,6 +554,7 @@ export function useExerciseTracker(landmarks) {
           startedAt: now,
           counter: new RepCounter(THRESHOLDS[exerciseName].down, THRESHOLDS[exerciseName].up),
           scores: {},
+          scoredReps: [],
         }
       }
     }
@@ -479,5 +575,5 @@ export function useExerciseTracker(landmarks) {
     }))
   }, [landmarks])
 
-  return { ...state, reset }
+  return { ...state, reset, closeSet }
 }
