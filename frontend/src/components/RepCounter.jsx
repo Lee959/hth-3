@@ -1,6 +1,10 @@
 import GlassTile from './GlassTile.jsx'
 
-/** Rep count — its own tile; the exercise name lives in ExerciseTitle.jsx above it. */
+/**
+ * Rep count — its own tile; the exercise name lives in ExerciseTitle.jsx
+ * above it, and the rest-between-sets stopwatch lives in RestTimer.jsx
+ * (top-middle of the screen), not here.
+ */
 export default function RepCounter({ reps }) {
   return (
     <GlassTile className="p-4 text-center">

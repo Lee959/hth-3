@@ -7,7 +7,9 @@ import GaugeRing from '../components/GaugeRing.jsx'
 import MetricsSidebar from '../components/MetricsSidebar.jsx'
 import MuscleHeatmap from '../components/MuscleHeatmap.jsx'
 import RepCounter from '../components/RepCounter.jsx'
+import RestTimer from '../components/RestTimer.jsx'
 import SessionControls from '../components/SessionControls.jsx'
+import SetHistory from '../components/SetHistory.jsx'
 import { useAuth } from '../auth/AuthContext.jsx'
 import { useCamera } from '../hooks/useCamera.js'
 import { useExerciseTracker } from '../hooks/useExerciseTracker.js'
@@ -38,7 +40,8 @@ export default function WorkoutSession() {
   const { videoRef, stream, ready } = useCamera()
   const [paused, setPaused] = useState(false)
   const landmarks = usePoseDetection(videoRef, { running: ready && !paused })
-  const { exerciseName, reps, scores, speed, peakAcceleration, reset } = useExerciseTracker(landmarks)
+  const { phase, exerciseName, reps, scores, speed, peakAcceleration, restElapsedMs, completedSets, reset } =
+    useExerciseTracker(landmarks)
   const [sessionId, setSessionId] = useState(null)
   const [vitals, setVitals] = useState([])
 
@@ -61,6 +64,17 @@ export default function WorkoutSession() {
     return () => clearInterval(interval)
   }, [sessionId])
 
+  // Persist each completed set as it closes (see useExerciseTracker's
+  // resting-phase transition) through the existing set-logging endpoint.
+  useEffect(() => {
+    if (!sessionId || completedSets.length === 0) return
+    const latest = completedSets[completedSets.length - 1]
+    api.post(`/workouts/${sessionId}/sets`, {
+      exercise_name: latest.exerciseName,
+      reps: latest.reps,
+    })
+  }, [sessionId, completedSets.length])
+
   function handleEndSession() {
     if (sessionId) api.post(`/workouts/${sessionId}/end`)
     reset()
@@ -71,13 +85,6 @@ export default function WorkoutSession() {
     <div className="relative h-full w-full overflow-hidden bg-black">
       <CameraFeed videoRef={videoRef} />
 
-      {!configured && (
-        <p className="absolute left-1/2 top-16 z-20 w-[90%] max-w-sm -translate-x-1/2 rounded-2xl border border-amber-300/30 bg-amber-500/20 p-3 text-center text-sm text-amber-100 shadow-lg backdrop-blur-xl sm:top-4">
-          Log in requires Auth0 to be configured (see docs/SETUP.md). Workout sessions won't save
-          until then, but the camera + live tracking below still works.
-        </p>
-      )}
-
       <Link
         to="/"
         aria-label="Back to Home"
@@ -87,13 +94,23 @@ export default function WorkoutSession() {
         <BackIcon />
       </Link>
 
-      {/* Left: HUD-style metrics overlay, vertically centered like the right column */}
-      <div className="absolute left-4 top-1/2 z-10 -translate-y-1/2">
+      {/* Top-middle: rest stopwatch, only while resting between sets */}
+      {phase === 'resting' && restElapsedMs > 0 && (
+        <div className="absolute left-1/2 top-4 z-10 -translate-x-1/2">
+          <RestTimer restElapsedMs={restElapsedMs} />
+        </div>
+      )}
+
+      {/* Left: HUD-style metrics overlay, vertically centered like the right column.
+          max-h + overflow-y-auto so it scrolls internally instead of running into
+          the bottom controls/banner on short viewports — 5 tiles in the right
+          column made this a real problem on mobile, not just a desktop nicety. */}
+      <div className="absolute left-4 top-1/2 z-10 max-h-[62vh] -translate-y-1/2 overflow-y-auto">
         <MetricsSidebar vitals={vitals} speed={speed} peakAcceleration={peakAcceleration} />
       </div>
 
-      {/* Right: exercise title, muscle map, rep count, then rep goal — one vertical column, far right edge */}
-      <div className="absolute right-4 top-1/2 z-10 flex w-36 -translate-y-1/2 flex-col gap-3">
+      {/* Right: exercise title, muscle map, rep count, rep goal, then set history — one vertical column, far right edge */}
+      <div className="absolute right-4 top-1/2 z-10 flex max-h-[62vh] w-36 -translate-y-1/2 flex-col gap-3 overflow-y-auto">
         <ExerciseTitle exerciseName={exerciseName} />
         <MuscleHeatmap scores={scores} />
         <RepCounter reps={reps} />
@@ -103,10 +120,22 @@ export default function WorkoutSession() {
           sublabel={`${reps} / ${TARGET_REPS} reps`}
           color="#fb7185"
         />
+        <SetHistory sets={completedSets} />
       </div>
 
-      {/* Bottom-middle: pause/reset/end */}
-      <div className="absolute bottom-6 left-1/2 z-10 -translate-x-1/2">
+      {/* Bottom-middle: setup notice (if any) stacked above pause/reset/end
+          — controls are last in the flex-col so they stay pinned to the
+          same bottom-6 position whether or not the banner above them is
+          showing. Kept off the TOP of the screen entirely, since that's
+          where the back button, rest timer, and (on narrow screens) the
+          HUD tiles already compete for space. */}
+      <div className="absolute bottom-6 left-1/2 z-10 flex -translate-x-1/2 flex-col items-center gap-3">
+        {!configured && (
+          <p className="w-[90vw] max-w-sm rounded-2xl border border-amber-300/30 bg-amber-500/20 p-3 text-center text-sm text-amber-100 shadow-lg backdrop-blur-xl">
+            Log in requires Auth0 to be configured (see docs/SETUP.md). Workout sessions won't save
+            until then, but the camera + live tracking below still works.
+          </p>
+        )}
         <SessionControls
           isPaused={paused}
           onTogglePause={() => setPaused((p) => !p)}
