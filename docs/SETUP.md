@@ -53,7 +53,7 @@ psql "$DATABASE_URL" -f sql/create_hypertable.sql
 python run.py
 ```
 
-Visit http://localhost:5000/api/health — you should see `{"status": "ok"}`.
+Visit http://localhost:5050/api/health — you should see `{"status": "ok"}`.
 
 Whenever the backend can't reach the database (the health check or any
 other request), it writes a line to `backend/logs/database.log` with the
@@ -73,8 +73,8 @@ npm run dev
 ```
 
 Visit http://localhost:5173. Vite proxies `/api/*` to the Flask server on
-port 5000 (see `vite.config.js`), so the frontend `.env`'s
-`VITE_API_BASE_URL` can stay pointed at `http://localhost:5000/api` for
+port 5050 (see `vite.config.js`), so the frontend `.env`'s
+`VITE_API_BASE_URL` can stay pointed at `http://localhost:5050/api` for
 local dev.
 
 Without any further config, the app runs with an "Auth0 isn't configured"
@@ -91,9 +91,19 @@ banner and login disabled — that's expected until step 3.
      (`VITE_AUTH0_DOMAIN`, `VITE_AUTH0_CLIENT_ID`).
 3. **Applications → APIs → Create API.**
    - Set an Identifier, e.g. `https://api.accountable.dev` (doesn't need to
-     be a real URL, just a unique string) — this is the **audience**.
+     be a real URL, just a unique string) — this is the **audience**. Set
+     the signing algorithm to **RS256** (the default, and what
+     `backend/app/auth/decorators.py` expects).
    - Put that same value in `frontend/.env` (`VITE_AUTH0_AUDIENCE`) and
-     `backend/.env` (`AUTH0_AUDIENCE`).
+     `backend/.env` (`AUTH0_AUDIENCE`) — **copy it exactly, trailing slash
+     and all.** Auth0 matches the audience as a literal string:
+     `https://api.accountable.dev` and `https://api.accountable.dev/` are
+     two different identifiers to it. A mismatch here doesn't fail quietly
+     either — `loginWithRedirect()` still round-trips to Auth0 and back,
+     landing on `/` with `?error=access_denied&error_description=Service
+     not found: <audience>` in the URL, which is the tell that the
+     identifier just needs to match exactly, not a broken client
+     id/domain/callback URL.
    - Put the tenant Domain in `backend/.env` (`AUTH0_DOMAIN`).
 4. Restart both dev servers so the new env vars are picked up.
 
