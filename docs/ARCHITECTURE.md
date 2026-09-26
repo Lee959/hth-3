@@ -296,7 +296,7 @@ session's flat black:
   `useExerciseTracker`'s `reset()` — `reset()` clears `completedSets` and
   `totalRestMs`, so this is the only point that data is still readable.
   `buildWorkoutSummary` bundles `completedSets`, `totalDurationMs` (wall
-  clock since a `sessionStartedAtRef` captured at mount — separate from the
+  clock since the workout saver's `startedAt`, captured at mount — separate from the
   tracker, since a workout's total duration outlives any one rest/active
   phase), `totalRestMs`, average heart rate (mean of every `heart_rate_bpm`
   reading in `vitals`), and `summaryScoresFor(completedSets)` — a whole-
@@ -319,13 +319,19 @@ session's flat black:
   as a name-left/numbers-right list — the format asked for was a workout-
   plan-style table, not a per-set chronological log like the old
   `SetHistory.jsx` did.
-- **Persistence stub.** `stubSaveWorkoutSummary()` in `lib/workoutSummary.js`
-  just logs the snapshot and resolves `{ saved: false }` — a real call site
-  for whenever a `POST /api/workouts/:id/summary`-style endpoint exists,
-  intentionally not built yet (no schema/architecture decisions made here).
-- **"New Workout"** clears the summary and resets `sessionStartedAtRef`
-  without leaving `/session` (stays in the immersive view); **"Home"**
-  navigates back to `/` via the existing back-button route.
+- **Saving.** The snapshot itself isn't stored: the home page's summary is
+  worked out from the raw data, so `lib/workoutSaver.js` saves only that —
+  the workout's start/end times (browser clock, matching the snapshot's
+  duration), its sets and its heart rate readings. They go out as they're
+  recorded; anything recorded before the workout exists in the database,
+  or whose request failed, is queued and re-sent, and End sends whatever's
+  left (retrying a few times) before `POST /workouts/:id/end`. That final
+  save is tracked in `services/api.js` (`trackSave`/`whenSaved`), and
+  `useAuthedGet` waits for it (up to 10 s, then loads again when it's
+  done), so going Home right away shows the workout just finished.
+- **"New Workout"** clears the summary and starts a fresh saver without
+  leaving `/session` (stays in the immersive view); **"Home"** navigates
+  back to `/` via the existing back-button route.
 
 ## Design: "Liquid Glass"
 

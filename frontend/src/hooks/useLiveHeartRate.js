@@ -1,13 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 
-import { MIN_SNR_DB, WINDOW_S, estimateHeartRate } from '../lib/rppg.js'
+import { WINDOW_S, createHeartRateTracker } from '../lib/rppg.js'
 
 // How often the reading refreshes. Each one looks back over the last
-// WINDOW_S seconds, like a smartwatch; estimating costs ~1-2 ms.
+// WINDOW_S seconds, like a smartwatch; estimating costs ~2-4 ms.
 const UPDATE_MS = 500
-// Keep showing the last good reading this long when a window is too noisy
-// (e.g. mid-rep), rather than flickering to "no data".
-const HOLD_MS = 5000
 // Weight of the previous face position in the running average: pose
 // landmarks jitter a pixel or so per frame on a far-away face, which would
 // otherwise swamp the pulse (see backend/app/rppg_engine/face_roi.py).
@@ -25,13 +22,19 @@ const RIGHT_EAR = 8
  * color over the cheeks and nose (located with the pose landmarks already
  * tracked for rep counting, which work with the whole body in frame), then
  * every UPDATE_MS turns the last WINDOW_S seconds of color into a heart
- * rate (lib/rppg.js). Runs entirely in the browser; nothing is uploaded.
+ * rate (lib/rppg.js), cancelling the color changes the head's movement
+ * causes. Runs entirely in the browser; nothing is uploaded.
  *
- * Returns the latest heart rate in bpm, or null until one is measured.
+ * Returns the heart rate to show in bpm, or null when there's none. Each
+ * newly measured reading (not a held one) is also passed to
+ * onReading({ bpm, windowSec }), windowSec being the seconds of video it
+ * covers.
  */
-export function useLiveHeartRate(videoRef, landmarks, { running = true } = {}) {
+export function useLiveHeartRate(videoRef, landmarks, { running = true, onReading } = {}) {
   const landmarksRef = useRef(landmarks)
   landmarksRef.current = landmarks
+  const onReadingRef = useRef(onReading)
+  onReadingRef.current = onReading
   const [bpm, setBpm] = useState(null)
 
   useEffect(() => {
@@ -41,9 +44,9 @@ export function useLiveHeartRate(videoRef, landmarks, { running = true } = {}) {
     const canvas = document.createElement('canvas')
     const ctx = canvas.getContext('2d', { willReadFrequently: true })
     const samples = []
+    const tracker = createHeartRateTracker()
     let roi = null
     let lastUpdate = 0
-    let lastGood = -Infinity
     let handle = null
     const useFrameCallback = 'requestVideoFrameCallback' in video
 
@@ -90,7 +93,18 @@ export function useLiveHeartRate(videoRef, landmarks, { running = true } = {}) {
           total += weight
         }
       }
-      return { r: r / total, g: g / total, b: b / total }
+      // Where the head is, and how far the smoothed region trails it: the
+      // estimate cancels color changes that follow these.
+      return {
+        r: r / total,
+        g: g / total,
+        b: b / total,
+        x: found.cx,
+        y: found.cy,
+        size: faceWidth,
+        lagX: found.cx - roi.cx,
+        lagY: found.cy - roi.cy,
+      }
     }
 
     function onFrame(now, metadata) {
@@ -109,13 +123,9 @@ export function useLiveHeartRate(videoRef, landmarks, { running = true } = {}) {
 
       if (now - lastUpdate >= UPDATE_MS) {
         lastUpdate = now
-        const estimate = estimateHeartRate(samples)
-        if (estimate && estimate.snrDb >= MIN_SNR_DB) {
-          lastGood = now
-          setBpm(estimate.bpm)
-        } else if (now - lastGood > HOLD_MS) {
-          setBpm(null)
-        }
+        const reading = tracker.update(samples, t)
+        setBpm(reading.bpm)
+        if (reading.fresh) onReadingRef.current?.({ bpm: reading.bpm, windowSec: reading.windowSec })
       }
       schedule()
     }

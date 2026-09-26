@@ -53,10 +53,10 @@ function StatTile({ label, value, sublabel }) {
 /**
  * Full-screen "pop out" shown after End Workout — a snapshot of the session
  * WorkoutSession.jsx captured just before resetting the live tracker (see
- * handleEndSession), not a live view. Purely visual for now: `onSaveAgain`
- * is a stub the parent wires to whatever will eventually persist this
- * (see stubSaveWorkoutSummary in lib/workoutSummary.js) — no real backend
- * call happens here.
+ * handleEndSession), not a live view. Purely visual: the workout itself is
+ * saved by WorkoutSession.jsx (lib/workoutSaver.js) as this pops up — only
+ * its raw sets, heart rate readings and times, which the home page's
+ * summary is worked out from.
  */
 export default function WorkoutSummary({ summary, onDone, stream }) {
   const { completedSets, totalDurationMs, totalRestMs, avgHeartRateBpm, scores } = summary
