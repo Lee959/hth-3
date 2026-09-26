@@ -1,4 +1,4 @@
-# FormCheck
+# The Exercist
 
 A real-time workout coach: one webcam feed drives live rep counting +
 muscle-group feedback (MediaPipe Pose, in-browser) and contactless vitals
