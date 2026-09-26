@@ -9,7 +9,6 @@ import MuscleHeatmap from '../components/MuscleHeatmap.jsx'
 import RepCounter from '../components/RepCounter.jsx'
 import RestTimer from '../components/RestTimer.jsx'
 import SessionControls from '../components/SessionControls.jsx'
-import SetHistory from '../components/SetHistory.jsx'
 import { useAuth } from '../auth/AuthContext.jsx'
 import { useCamera } from '../hooks/useCamera.js'
 import { useExerciseTracker } from '../hooks/useExerciseTracker.js'
@@ -109,8 +108,12 @@ export default function WorkoutSession() {
         <MetricsSidebar vitals={vitals} speed={speed} peakAcceleration={peakAcceleration} />
       </div>
 
-      {/* Right: exercise title, muscle map, rep count, rep goal, then set history — one vertical column, far right edge */}
-      <div className="absolute right-4 top-1/2 z-10 flex max-h-[62vh] w-36 -translate-y-1/2 flex-col gap-3 overflow-y-auto">
+      {/* Right: exercise title, muscle map, rep count, rep goal — one vertical
+          column, far right edge. Session-level stats (sets, duration, avg HR)
+          are intentionally NOT shown live; they're captured in handleEndSession
+          and surfaced all at once on the Workout Saved summary screen instead,
+          so this column stays short enough to never need internal scrolling. */}
+      <div className="absolute right-4 top-1/2 z-10 flex w-36 -translate-y-1/2 flex-col gap-3">
         <ExerciseTitle exerciseName={exerciseName} />
         <MuscleHeatmap scores={scores} />
         <RepCounter reps={reps} />
@@ -120,7 +123,6 @@ export default function WorkoutSession() {
           sublabel={`${reps} / ${TARGET_REPS} reps`}
           color="#fb7185"
         />
-        <SetHistory sets={completedSets} />
       </div>
 
       {/* Bottom-middle: setup notice (if any) stacked above pause/reset/end
