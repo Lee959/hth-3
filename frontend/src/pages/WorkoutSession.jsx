@@ -39,7 +39,7 @@ export default function WorkoutSession() {
   const { videoRef, stream, ready } = useCamera()
   const [paused, setPaused] = useState(false)
   const landmarks = usePoseDetection(videoRef, { running: ready && !paused })
-  const { phase, exerciseName, reps, scores, speed, peakAcceleration, restElapsedMs, completedSets, reset } =
+  const { phase, exerciseName, reps, scores, speed, peakAcceleration, restElapsedMs, completedSets, reset, closeSet } =
     useExerciseTracker(landmarks)
   const [sessionId, setSessionId] = useState(null)
   const [vitals, setVitals] = useState([])
@@ -63,18 +63,34 @@ export default function WorkoutSession() {
     return () => clearInterval(interval)
   }, [sessionId])
 
+  function saveSet(set) {
+    if (!sessionId || !set) return
+    api.post(`/workouts/${sessionId}/sets`, {
+      exercise_name: set.exerciseName,
+      reps: set.reps,
+      // Averaged per-rep movement quality (see lib/repQuality.js).
+      ...set.quality,
+    })
+  }
+
   // Persist each completed set as it closes (see useExerciseTracker's
   // resting-phase transition) through the existing set-logging endpoint.
   useEffect(() => {
-    if (!sessionId || completedSets.length === 0) return
-    const latest = completedSets[completedSets.length - 1]
-    api.post(`/workouts/${sessionId}/sets`, {
-      exercise_name: latest.exerciseName,
-      reps: latest.reps,
-    })
+    if (completedSets.length === 0) return
+    saveSet(completedSets[completedSets.length - 1])
   }, [sessionId, completedSets.length])
 
+  // Reset and End both close and save a set that's still in progress before
+  // clearing the tracker, so stopping mid-set never throws away logged
+  // reps. They save it directly: reset() empties completedSets in the same
+  // update, so the effect above never sees it (and can't double-save it).
+  function handleReset() {
+    saveSet(closeSet())
+    reset()
+  }
+
   function handleEndSession() {
+    saveSet(closeSet())
     if (sessionId) api.post(`/workouts/${sessionId}/end`)
     reset()
     setPaused(true)
@@ -142,7 +158,7 @@ export default function WorkoutSession() {
           isPaused={paused}
           onTogglePause={() => setPaused((p) => !p)}
           onEndSession={handleEndSession}
-          onReset={reset}
+          onReset={handleReset}
         />
       </div>
     </div>
