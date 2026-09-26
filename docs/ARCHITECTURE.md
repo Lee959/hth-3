@@ -188,14 +188,15 @@ everything the session page shows, entirely client-side:
 4. When the active exercise's own range finally drops below the
    swing-detection threshold, the set is over: `lib/repCounter.js`'s
    up/down state machine's final rep count is logged into `completedSets`
-   (see below), the muscle heatmap wipes, and the hook enters `resting`
-   with a stopwatch (`RepCounter.jsx` switches from showing rep count to
-   showing elapsed rest time). The stopwatch ticks on its own `setInterval`
-   rather than off the pose-detection framerate, so it keeps counting even
-   if MediaPipe stops producing frames (e.g. the person steps out of frame).
-   **Every time an exercise resumes from rest — even the same exercise as
-   before — its rep counter restarts at 0.** A "set" is exactly one
-   continuous burst of activity between two rest periods.
+   (see below), the muscle heatmap wipes, and the hook enters `resting`.
+   `RestTimer.jsx` (a separate component from `RepCounter.jsx` — see the
+   layout section below) appears top-middle showing elapsed rest time,
+   ticking on its own `setInterval` rather than off the pose-detection
+   framerate, so it keeps counting even if MediaPipe stops producing frames
+   (e.g. the person steps out of frame). **Every time an exercise resumes
+   from rest — even the same exercise as before — its rep counter restarts
+   at 0.** A "set" is exactly one continuous burst of activity between two
+   rest periods.
 5. **Entering activity is guarded too, but not by a timer or a windowed
    range check.** A candidate detected while resting becomes `pending`, not
    immediately `active`, and the UI keeps showing Resting until it's
@@ -236,14 +237,150 @@ everything the session page shows, entirely client-side:
 
 The UI follows a frosted-glass look: `bg-white/10 backdrop-blur-xl border
 border-white/20` cards over a `from-indigo-950 via-violet-900
-to-fuchsia-900` gradient background, white text, rounded-full nav/buttons,
-and `GaugeRing.jsx` ring gauges for at-a-glance percentages (heart-rate
-zone, rep-goal progress). All metrics — gauges, stat pills, and the
-Reset/Pause/History/End quick actions — live in `MetricsSidebar.jsx` on the
-left; the camera feed, rep counter, and muscle heatmap fill the rest of the
-page. Extending the look (new pages, new cards) means reusing that same
-`rounded-3xl border border-white/20 bg-white/10 shadow-lg backdrop-blur-xl`
-combination rather than introducing a second style.
+to-fuchsia-900` gradient background, white text, rounded-full nav/buttons.
+`GlassTile.jsx` is the one shared surface every HUD element sits in now —
+**each metric, control, and readout gets its own tile** rather than
+several elements sharing one big card (compose it with layout classes via
+`className`; don't reinvent the border/blur/shadow combo elsewhere).
+
+Two type families, applied consistently: **Anton** for the one thing that
+should read as a giant scoreboard number — the rep count in
+`RepCounter.jsx` (`font-anton`) — and **Rajdhani** for everything else,
+**bold (700)** for titles/headings and **light (300)** for
+subtitles/secondary text. Both are loaded via Google Fonts in `index.html`
+and registered in `tailwind.config.js`'s `fontFamily` (`font-anton`,
+`font-rajdhani` — pair the latter with `font-bold` or `font-light`).
+Changing `tailwind.config.js`'s `theme.extend` sometimes needs a dev-server
+restart to take effect, not just a hot reload — if a new utility class
+silently does nothing, restart before assuming the class name is wrong.
+
+### Workout session layout: an immersive HUD, not side panels
+
+`WorkoutSession.jsx` makes the camera feed fill the entire screen —
+`CameraFeed.jsx` is `absolute inset-0`, not a framed box — with small,
+independently-positioned glass tiles floating over it as a heads-up
+display, rather than full-width side panels:
+
+- **Top-left:** a circular back-to-Home button (`BackIcon`), since the top
+  nav bar is hidden on this route (see below) and this is the only way out.
+- **Top-middle, but only while resting:** `RestTimer.jsx` — the rest
+  stopwatch, shown in place of nothing (there's no permanent element here)
+  whenever `phase === 'resting'` and `restElapsedMs > 0`. Same `font-anton`
+  family as `RepCounter.jsx`'s rep count, one size down (`text-5xl` vs
+  `text-6xl`) so the two read as the same "big number" language without
+  competing for weight — they're never both on screen at once anyway,
+  since a set is either active (showing reps) or resting (showing this).
+- **Upper-left, below that:** `MetricsSidebar.jsx` — a narrow (`w-36`)
+  vertical stack of individually-tiled metrics: `HeartRateGauge.jsx`,
+  breathing, speed, peak accel. Each is its own `GlassTile`, not sections
+  sharing one card.
+- **Far right edge, vertically centered:** a narrow vertical column, top to
+  bottom — `ExerciseTitle.jsx` (current exercise name), `MuscleHeatmap.jsx`
+  (front view only — `view="FRONT"`, not `"BOTH"`, to stay compact at this
+  width), `RepCounter.jsx` (the big Anton number, rep count only — no
+  phase-awareness; see `RestTimer.jsx` above for that), a rep-goal
+  `GaugeRing.jsx`, then `SetHistory.jsx` — five separate tiles stacked with
+  `gap-3`, not one shared card. Rep goal lives here rather than in the left
+  HUD because it's part of "what am I doing and how's it going," which
+  reads better next to the exercise name than next to heart rate/breathing.
+
+**Heart rate gets its own dedicated dial, not the generic `GaugeRing.jsx`.**
+`HeartRateGauge.jsx` is a Garmin-watch-style widget: a 270° arc split into
+5 zone-colored segments (`ZONES`, resting -> max, blue -> red, based on %
+of `ASSUMED_MAX_HR`), a tick marking the current reading's position on that
+arc, the zone name and raw bpm in the center, and a heart icon tinted to
+the current zone. It's structurally different from `GaugeRing.jsx` (an arc
+of discrete colored segments vs. one continuous single-color progress
+ring), which is why it's a separate component rather than a prop variant —
+forcing both shapes through one component would make either one harder to
+read. `GaugeRing.jsx` is still what everything else uses (rep goal here).
+- **Bottom-middle:** the Auth0 setup notice (if `!configured`) stacked
+  directly above `SessionControls.jsx` (Reset/Pause-or-Resume/End as flat
+  vector SVG icons only, no text labels — `title`/`aria-label` carry the
+  label instead), in its own small standout rectangle. The notice is
+  *first* in that flex column and the controls are *last*, so the controls
+  stay pinned to the same `bottom-6` position whether or not the notice
+  above them is showing, rather than shifting position based on it.
+
+**The left and right columns cap their height and scroll internally**
+(`max-h-[62vh] overflow-y-auto`) rather than assuming their content always
+fits — five tiles vertically centered can genuinely run past a short
+viewport (a real bug caught on mobile during development, not a
+hypothetical), and centering alone doesn't know to leave room for the
+bottom-middle controls/notice. If you add another tile to either column,
+re-check this on a short/mobile viewport rather than assuming the existing
+budget still has room.
+
+Because every element here is a small, fixed-width tile rather than a
+width-dependent column (the old design's `sm:w-1/4` side panels), **the
+same absolute-positioned markup works from phone to desktop with no
+separate mobile breakpoint** — unlike the previous full-width-panel layout,
+which needed a distinct stacked-flow structure below `sm`. Verify this
+holds if a tile's content ever grows (e.g. a longer exercise name) rather
+than assuming it forever.
+
+**The top nav bar is hidden entirely on `/session`** (see `App.jsx`'s
+`immersive = location.pathname === '/session'` check) for a full-screen,
+distraction-free view — nothing here has a header around it.
+`WorkoutSession` carries its own small back-to-Home button instead so the
+route isn't a dead end. Any absolutely-positioned banner on this page (the
+"Auth0 isn't configured" notice) has to be checked against both the back
+button and `SessionControls` — they've already collided twice (the banner
+is wide enough on narrow screens to cover the back button, and separately
+covered `SessionControls` before it moved to the bottom); the fix both
+times was vertical separation (`top-16`/`top-4` breakpoint split, or moving
+the controls to the opposite end of the screen), not z-index, since
+z-index alone would still block clicks on whichever element loses.
+
+`App.jsx`'s shell is a fixed-height flex column (`h-screen flex flex-col
+overflow-hidden`, with `<main>` as `flex-1 overflow-y-auto`) rather than a
+naturally-flowing page, so `WorkoutSession.jsx` has a real `h-full` to
+anchor its `absolute` children against. `Dashboard.jsx` and `History.jsx`
+are unaffected — short, centered content that fits fine inside that same
+scrollable `<main>` — and both keep the top nav bar since `immersive` is
+only true on `/session`.
+
+**History moved to the home screen.** `WorkoutSession.jsx` doesn't link to
+it at all (there's no header to hold that link, and burying a navigation
+link inside the immersive session view didn't make sense); `Dashboard.jsx`
+has a "View history" link under the primary "Start a workout" button.
+
+**Heatmap color:** `MuscleHeatmap.jsx` uses `@musclemap/react`'s
+`monochromeColor`/`monochromeBaseColor` props (a 2-point grey→color scale,
+not the multi-hue `LOAD` ramp) set to the brand red scale — `#FADCDC`
+(lightest, score 0) through `#DF2629` (deepest, score 100). The library
+only takes two endpoints and interpolates, so the given 200/300/400
+mid-tones aren't fed in as literal stops; they're documented in
+`HEATMAP_RED` in that file for reference and land close to the
+interpolated result anyway since they're already a roughly linear
+progression between the two endpoints.
+
+**Body base colors (off-white/surface-white, not the library's default dark
+navy/grey) are CSS overrides, not props.** `monochromeBaseColor` only
+recolors muscles that are actually scored — present in `values` — so it
+has no effect on the rest of the figure. `@musclemap/react` bakes two
+*different*, unrelated neutral colors into the SVG that aren't exposed
+through any prop:
+
+1. The outer body/skin silhouette — one path, filled via a gradient in the
+   library's own defs (id ending in `-base`, e.g. `mm-r1-male-front-base`).
+2. Every individual *unscored* muscle shape — ~28 separate paths, each a
+   flat `fill="#3a465e"` (confirmed by inspecting the live SVG's `fill`
+   attributes with nothing scored — don't assume from a screenshot alone
+   which paths are "detail linework" vs. actual muscle shapes, as an
+   earlier pass at this doc did incorrectly).
+
+`MuscleHeatmap.jsx` overrides both with a scoped `<style>` tag: a
+`stop-color` rule for (1) and a `fill` rule targeting `path[fill="#3a465e"]`
+for (2). Both work with an ordinary stylesheet rule and no `!important`,
+because SVG's `stop-color`/`fill` *attributes* are presentation attributes
+— the lowest-specificity layer in the CSS cascade. The gradient selector
+(`[id$="-base"]`) is broad on purpose to survive a sex/view change; the
+muscle-fill selector is pinned to the exact hex the library currently
+ships, so if a future `@musclemap/react` version changes that default, the
+override silently stops matching and unscored muscles revert to the
+library's dark grey — worth a quick visual check after bumping that
+dependency.
 
 ## Auth flow
 
