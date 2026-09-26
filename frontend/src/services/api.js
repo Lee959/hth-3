@@ -4,6 +4,22 @@ export const api = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || '/api',
 })
 
+// Workout saves still on their way (lib/workoutSaver.js). Reading workout
+// data waits for them (useAuthedGet), so a page opened right after a
+// workout ends shows it; a new workout is only created once they're done.
+const pendingSaves = new Set()
+
+export function trackSave(promise) {
+  pendingSaves.add(promise)
+  const settle = () => pendingSaves.delete(promise)
+  promise.then(settle, settle)
+}
+
+/** Resolves once every save tracked so far has finished (or given up). */
+export function whenSaved() {
+  return Promise.allSettled([...pendingSaves])
+}
+
 let authInterceptor = null
 
 // Safe to call from every page that needs auth: replaces any interceptor a

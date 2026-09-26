@@ -1,11 +1,12 @@
+from dotenv import load_dotenv
 from flask import Flask
 from flask_cors import CORS
-from dotenv import load_dotenv
 
-from .config import Config
-from .extensions import db, migrate
-
+# Before importing .config: its settings read the environment at import time.
 load_dotenv()
+
+from .config import Config  # noqa: E402
+from .extensions import db, migrate  # noqa: E402
 
 
 def create_app(config_object: type = Config) -> Flask:

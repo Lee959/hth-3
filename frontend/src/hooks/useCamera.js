@@ -2,13 +2,17 @@ import { useEffect, useRef, useState } from 'react'
 
 /**
  * Opens the webcam ONCE and hands the same MediaStream to every consumer:
- * the live MediaPipe pose tracker and the MediaRecorder that ships clips to
- * Presage. Two separate getUserMedia() calls fight over the camera on most
+ * the live MediaPipe pose tracker and the live heart-rate reader
+ * (useLiveHeartRate). Two separate getUserMedia() calls fight over the camera on most
  * browsers/OSes, so this hook is the single source of truth for the stream
  * (see docs/ARCHITECTURE.md for why this is the answer to the "one camera,
  * two consumers" problem).
+ *
+ * 1280x720 rather than 640x480 so the heart-rate reading still has a big
+ * enough face to work with when someone stands back far enough for
+ * full-body pose tracking.
  */
-export function useCamera({ width = 640, height = 480 } = {}) {
+export function useCamera({ width = 1280, height = 720 } = {}) {
   const videoRef = useRef(null)
   const streamRef = useRef(null)
   const [ready, setReady] = useState(false)

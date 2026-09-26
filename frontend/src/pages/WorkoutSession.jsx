@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 
 import CameraFeed from '../components/CameraFeed.jsx'
+import ConnectionWarning from '../components/ConnectionWarning.jsx'
 import ExerciseTitle from '../components/ExerciseTitle.jsx'
 import GaugeRing from '../components/GaugeRing.jsx'
 import MetricsSidebar from '../components/MetricsSidebar.jsx'
@@ -13,12 +14,28 @@ import { useAuth } from '../auth/AuthContext.jsx'
 import { useCamera } from '../hooks/useCamera.js'
 import { useExerciseTracker } from '../hooks/useExerciseTracker.js'
 import { usePoseDetection } from '../hooks/usePoseDetection.js'
-import { useVitalsUpload } from '../hooks/useVitalsUpload.js'
-import { buildWorkoutSummary, stubSaveWorkoutSummary } from '../lib/workoutSummary.js'
-import { api, attachAuthToken } from '../services/api.js'
+import { useLiveHeartRate } from '../hooks/useLiveHeartRate.js'
+import { createWorkoutSaver } from '../lib/workoutSaver.js'
+import { buildWorkoutSummary } from '../lib/workoutSummary.js'
+import { attachAuthToken } from '../services/api.js'
 
 // Placeholder goal until the app has a real user-configured target.
 const TARGET_REPS = 10
+// Shortest stretch a heart rate reading is recorded for (the last one, when
+// the workout ends, covers whatever's left since the one before). New
+// measurements arrive every 0.5 s at best, but each covers ~8 s of video,
+// so recording them more often would mostly repeat the same one.
+const MIN_READING_MS = 1000
+
+// A tracked set as POST /workouts/:id/sets takes it.
+function setForSaving(set) {
+  return {
+    exercise_name: set.exerciseName,
+    reps: set.reps,
+    // Averaged per-rep movement quality (see lib/repQuality.js).
+    ...set.quality,
+  }
+}
 
 // Every HUD element here is a small, independently-positioned glass tile
 // (or a narrow stack of them) rather than full-width side panels, so the
@@ -43,10 +60,12 @@ export default function WorkoutSession() {
     reset,
     closeSet,
   } = useExerciseTracker(landmarks)
-  const [sessionId, setSessionId] = useState(null)
+  const heartRateBpm = useLiveHeartRate(videoRef, landmarks, {
+    running: ready && !paused,
+    onReading: ({ bpm, windowSec }) => recordHeartRate(Date.now(), bpm, windowSec),
+  })
   const [vitals, setVitals] = useState([])
   const [summary, setSummary] = useState(null)
-  const sessionStartedAtRef = useRef(Date.now())
 
   useEffect(() => {
     if (isAuthenticated) attachAuthToken(getAccessTokenSilently)
@@ -55,100 +74,99 @@ export default function WorkoutSession() {
   // Workouts save when logged in, or in dev mode (no Auth0) as the
   // backend's demo user (DEV_USER_SUB).
   const canSave = isAuthenticated || !configured
-  // StrictMode runs effects twice in development; without this guard every
-  // visit would create a second, empty session left "active" forever.
-  const sessionRequested = useRef(false)
 
-  function startSession() {
-    setSessionId(null)
-    api
-      .post('/workouts/')
-      .then((res) => setSessionId(res.data.id))
-      .catch((err) => console.error('could not start workout session', err))
+  // The workout being recorded, saved to the database as it goes (see
+  // lib/workoutSaver.js); each new workout gets a fresh one.
+  const saverRef = useRef(null)
+  if (saverRef.current === null) saverRef.current = createWorkoutSaver()
+  // The saver whose workout has been started in the database, once it has.
+  const [savingTo, setSavingTo] = useState(null)
+
+  // start() only creates the workout once, so StrictMode running this
+  // effect twice in development doesn't leave a second, empty one behind.
+  function startSaving() {
+    saverRef.current.start()
+    setSavingTo(saverRef.current)
   }
 
   useEffect(() => {
-    if (!canSave || sessionRequested.current) return
-    sessionRequested.current = true
-    startSession()
+    if (canSave) startSaving()
   }, [canSave])
 
-  // No uploads while the summary screen is up: that workout has ended.
-  useVitalsUpload(stream, sessionId, { enabled: ready && Boolean(sessionId) && !summary })
-
-  useEffect(() => {
-    if (!sessionId) return undefined
-    const interval = setInterval(() => {
-      api
-        .get(`/vitals/${sessionId}`)
-        .then((res) => setVitals(res.data))
-        .catch(() => {}) // keep the last readings; the next poll retries
-    }, 5000)
-    return () => clearInterval(interval)
-  }, [sessionId])
-
-  // Returns the request's promise (or null) so ending can wait for it.
-  function saveSet(set, id = sessionId) {
-    if (!id || !set) return null
-    return api
-      .post(`/workouts/${id}/sets`, {
-        exercise_name: set.exerciseName,
-        reps: set.reps,
-        // Averaged per-rep movement quality (see lib/repQuality.js).
-        ...set.quality,
-      })
-      .catch((err) => console.error('could not save set', err))
+  // Records a heart rate for the stretch since the last reading: kept
+  // (newest first, like the backend's list) for the summary's average, and
+  // saved to the workout. Called with each new measurement (see
+  // useLiveHeartRate), and at the end with whatever is showing. A stretch
+  // goes back at most `windowSec`, the video the measurement came from, so
+  // time with no heart rate isn't credited to the reading after it.
+  // Returns the reading, or null if none was recorded.
+  const heartRateRef = useRef(null)
+  heartRateRef.current = heartRateBpm
+  const lastReadingAtRef = useRef(saverRef.current.startedAt)
+  function recordHeartRate(now, bpm = heartRateRef.current, windowSec = null) {
+    const from = windowSec == null ? lastReadingAtRef.current : Math.max(lastReadingAtRef.current, now - windowSec * 1000)
+    if (now - from < MIN_READING_MS) return null
+    lastReadingAtRef.current = now
+    if (bpm == null) return null
+    const reading = {
+      heart_rate_bpm: bpm,
+      recorded_at: new Date(from).toISOString(),
+      window_sec: (now - from) / 1000,
+    }
+    setVitals((prev) => [reading, ...prev])
+    saverRef.current.add('reading', reading)
+    return reading
   }
 
-  // Ends workout `id` in the database once: saves `lastSet` (the set that
-  // was still in progress, if any), waits for it to land, then marks the
-  // session ended, so the end time comes after the last set.
-  const endedSessions = useRef(new Set())
-  function endInDatabase(id, lastSet) {
-    if (!id || endedSessions.current.has(id)) return
-    endedSessions.current.add(id)
-    Promise.resolve(saveSet(lastSet, id))
-      .then(() => api.post(`/workouts/${id}/end`))
-      .catch((err) => console.error('could not end workout', err))
+  // Save each completed set as it closes (see useExerciseTracker's
+  // resting-phase transition).
+  useEffect(() => {
+    if (completedSets.length === 0) return
+    saverRef.current.add('set', setForSaving(completedSets[completedSets.length - 1]))
+  }, [completedSets.length])
+
+  // Ends the workout at `endedAt`: records its last pieces — the set still
+  // in progress, if any, and the heart rate since the last reading — then
+  // has the saver send everything not saved yet and mark it ended. The
+  // closed set is saved directly here: reset() empties completedSets in
+  // the same batched update, so the effect above never sees it (and can't
+  // double-save it). Returns both (either may be null) for the summary.
+  function endWorkout(endedAt) {
+    const lastSet = closeSet()
+    if (lastSet) saverRef.current.add('set', setForSaving(lastSet))
+    const lastReading = recordHeartRate(endedAt)
+    saverRef.current.end(endedAt)
+    return { lastSet, lastReading }
   }
 
   // Leaving the page (browser back, another route) ends the workout too, so
-  // it isn't left "active". Through a ref so the cleanup sees current state.
+  // it isn't left "active". Set up only once it's started, not on mount,
+  // where StrictMode's extra unmount would end it straight away; through a
+  // ref so the cleanup sees current state.
   const leaveRef = useRef(null)
-  leaveRef.current = (id) => {
-    if (!endedSessions.current.has(id)) endInDatabase(id, closeSet())
+  leaveRef.current = (saver) => {
+    if (saver === saverRef.current && !saver.ended) endWorkout(Date.now())
   }
   useEffect(() => {
-    if (!sessionId) return undefined
-    const id = sessionId
-    return () => leaveRef.current(id)
-  }, [sessionId])
+    if (!savingTo) return undefined
+    return () => leaveRef.current(savingTo)
+  }, [savingTo])
 
-  // Persist each completed set as it closes (see useExerciseTracker's
-  // resting-phase transition) through the existing set-logging endpoint.
-  useEffect(() => {
-    if (completedSets.length === 0) return
-    saveSet(completedSets[completedSets.length - 1])
-  }, [sessionId, completedSets.length])
-
-  // Closes and saves a set that's still in progress before clearing the
-  // tracker, so ending mid-set never throws away logged reps. It's saved
-  // directly here: reset() empties completedSets in the same batched
-  // update, so the effect above never sees it (and can't double-save it).
   function handleEndSession() {
-    const lastSet = closeSet()
-    endInDatabase(sessionId, lastSet)
+    const endedAt = Date.now()
+    const { lastSet, lastReading } = endWorkout(endedAt)
     // Snapshot everything the summary screen needs BEFORE reset() clears
-    // the tracker's completedSets/totalRestMs. completedSets is this
-    // render's value, so the just-closed set is added explicitly.
-    const finishedSummary = buildWorkoutSummary({
-      completedSets: lastSet ? [...completedSets, lastSet] : completedSets,
-      totalDurationMs: Date.now() - sessionStartedAtRef.current,
-      totalRestMs,
-      vitals,
-    })
-    stubSaveWorkoutSummary(finishedSummary)
-    setSummary(finishedSummary)
+    // the tracker's completedSets/totalRestMs. completedSets and vitals are
+    // this render's values, so the just-recorded set and reading are added
+    // explicitly.
+    setSummary(
+      buildWorkoutSummary({
+        completedSets: lastSet ? [...completedSets, lastSet] : completedSets,
+        totalDurationMs: endedAt - saverRef.current.startedAt,
+        totalRestMs,
+        vitals: lastReading ? [lastReading, ...vitals] : vitals,
+      }),
+    )
     reset()
     setPaused(true)
   }
@@ -156,10 +174,11 @@ export default function WorkoutSession() {
   function handleNewWorkout() {
     setSummary(null)
     setVitals([])
-    sessionStartedAtRef.current = Date.now()
+    // The finished workout keeps saving in the background; this one gets its own.
+    saverRef.current = createWorkoutSaver()
+    lastReadingAtRef.current = saverRef.current.startedAt
     setPaused(false)
-    // The finished workout was ended in the database; this one gets its own.
-    if (canSave) startSession()
+    if (canSave) startSaving()
   }
 
   return (
@@ -178,7 +197,7 @@ export default function WorkoutSession() {
           the bottom controls/banner on short viewports — 5 tiles in the right
           column made this a real problem on mobile, not just a desktop nicety. */}
       <div className="absolute left-4 top-1/2 z-10 max-h-[62vh] -translate-y-1/2 overflow-y-auto">
-        <MetricsSidebar vitals={vitals} />
+        <MetricsSidebar vitals={vitals} heartRateBpm={heartRateBpm} />
       </div>
 
       {/* Right: exercise title, muscle map, rep count, rep goal — one vertical
@@ -205,6 +224,7 @@ export default function WorkoutSession() {
           where the rest timer and (on narrow screens) the HUD tiles already
           compete for space. */}
       <div className="absolute bottom-6 left-1/2 z-10 flex -translate-x-1/2 flex-col items-center gap-3">
+        <ConnectionWarning className="w-[90vw] max-w-sm" />
         {!configured && (
           <p className="w-[90vw] max-w-sm rounded-2xl border border-amber-300/30 bg-amber-500/20 p-3 text-center text-sm text-amber-100 shadow-lg backdrop-blur-xl">
             Dev mode: Auth0 isn't configured, so this workout saves to the demo user (see

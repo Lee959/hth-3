@@ -23,15 +23,3 @@ export function buildWorkoutSummary({ completedSets, totalDurationMs, totalRestM
     completedAt: Date.now(),
   }
 }
-
-/**
- * STUB — persistence isn't built yet. Once the workout-summary API/schema
- * exists, this is where WorkoutSummary.jsx's "save" action would POST the
- * snapshot (e.g. `api.post('/workouts/:id/summary', summary)`); for now it
- * just logs, so the UI has a real call site to wire up later without
- * touching any component.
- */
-export function stubSaveWorkoutSummary(summary) {
-  console.info('[stub] would persist workout summary:', summary)
-  return Promise.resolve({ saved: false, reason: 'persistence not implemented yet' })
-}

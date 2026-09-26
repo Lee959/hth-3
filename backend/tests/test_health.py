@@ -1,5 +1,8 @@
+from sqlalchemy.exc import OperationalError
+
 from app import create_app
 from app.config import Config
+from app.extensions import db
 
 
 class TestConfig(Config):
@@ -13,4 +16,17 @@ def test_health_check():
     client = app.test_client()
     resp = client.get("/api/health")
     assert resp.status_code == 200
-    assert resp.get_json() == {"status": "ok"}
+    assert resp.get_json() == {"status": "ok", "database": "ok"}
+
+
+def test_health_check_reports_unreachable_database(monkeypatch):
+    app = create_app(TestConfig)
+
+    def unreachable(*args, **kwargs):
+        raise OperationalError("SELECT 1", {}, Exception("No route to host"))
+
+    with app.app_context():
+        monkeypatch.setattr(db.session, "execute", unreachable)
+        resp = app.test_client().get("/api/health")
+    assert resp.status_code == 503
+    assert resp.get_json()["database"] == "unreachable"
