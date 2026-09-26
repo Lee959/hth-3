@@ -3,7 +3,10 @@ import { Link } from 'react-router-dom'
 export default function Dashboard() {
   return (
     <div className="mx-auto max-w-2xl p-6 pt-4 text-center">
-      <div className="rounded-3xl border border-white/20 bg-white/10 p-10 shadow-lg backdrop-blur-xl">
+      {/* Same liquid-glass surface as WorkoutSummary.jsx (see
+          styles/index.css) — a richer, light-catching take on
+          GlassTile.jsx's flat white/10 fill. */}
+      <div className="liquid-glass rounded-3xl p-10">
         <h1 className="font-rajdhani text-3xl font-bold uppercase tracking-wide text-white">
           Train with real-time form feedback
         </h1>

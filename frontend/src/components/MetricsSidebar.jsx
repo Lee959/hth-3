@@ -16,10 +16,12 @@ function StatTile({ label, value, unit }) {
  * (see GlassTile.jsx), meant to float as a compact cluster in the corner
  * of the session screen. Rep goal lives in the right-hand column instead
  * (see WorkoutSession.jsx), right below the exercise title. Heart rate
- * comes from Presage (server-side, polled); everything else is computed
- * live client-side by useExerciseTracker.
+ * comes from Presage (server-side, polled); breathing likewise. Speed/peak
+ * acceleration (computed live by useExerciseTracker) used to have tiles
+ * here too but were dropped from the HUD as noise — useExerciseTracker
+ * still computes them internally, just nothing renders them now.
  */
-export default function MetricsSidebar({ vitals, speed = 0, peakAcceleration = 0 }) {
+export default function MetricsSidebar({ vitals }) {
   const latest = vitals?.[0]
 
   return (
@@ -30,8 +32,6 @@ export default function MetricsSidebar({ vitals, speed = 0, peakAcceleration = 0
         value={latest?.breathing_rate_bpm ? Math.round(latest.breathing_rate_bpm) : '—'}
         unit="rpm"
       />
-      <StatTile label="Speed" value={(speed * 100).toFixed(0)} unit="rel/s" />
-      <StatTile label="Peak accel" value={(peakAcceleration * 100).toFixed(0)} unit="rel/s²" />
     </div>
   )
 }
