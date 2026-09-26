@@ -60,8 +60,8 @@ export default function App() {
               className="liquid-glass flex items-center gap-2.5 rounded-full px-5 py-2.5 md:px-6 md:py-3"
             >
               <span className="h-2.5 w-2.5 rounded-full bg-gradient-to-br from-rose-300 to-rose-500 shadow-[0_0_12px_rgba(251,113,133,0.8)]" />
-              <span className="whitespace-nowrap font-rajdhani text-lg font-bold uppercase tracking-wide text-white">
-                The Exercist
+              <span className="whitespace-nowrap font-rajdhani text-lg font-bold tracking-wide text-white">
+                account<span className="text-rose-400">ABLE</span>
               </span>
             </Link>
             <nav className="liquid-glass flex items-center gap-1 rounded-full p-1.5 font-rajdhani text-sm font-semibold uppercase tracking-wide">

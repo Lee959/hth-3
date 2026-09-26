@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 
 import { LANDMARKS, angleAt, ema, midpoint } from '../lib/poseMath.js'
-import { muscleWeightsFor } from '../lib/muscleMap.js'
+import { LOAD_PER_REP, muscleWeightsFor } from '../lib/muscleMap.js'
 import { RepCounter } from '../lib/repCounter.js'
 import { repSeconds, scoreRep, summarizeReps } from '../lib/repQuality.js'
 
@@ -22,7 +22,6 @@ const CLASSIFY_WINDOW_MS = 1000
 // top/bottom of every rep).
 const LIVENESS_WINDOW_MS = 300
 
-const LOAD_PER_REP = 30 // score points a full-weight muscle gains per rep
 const DECAY_PER_SECOND = 2 // score points/sec a muscle cools down when idle
 const STOPWATCH_TICK_MS = 250 // how often the rest timer re-renders while idle
 
@@ -209,6 +208,11 @@ export function useExerciseTracker(landmarks) {
   const completedSets = useRef([])
   const motion = useRef({ lastPoint: null, lastTime: null, velocity: 0, accel: 0, peakAccel: 0 })
   const lastDecayTime = useRef(null)
+  // Sum of every *finished* rest period this session (the current, still-
+  // running one lives in restElapsedMs/restStartedAt until it closes out —
+  // see the pending->active graduation branch below, the only place a rest
+  // period ends). Not reset by a mid-set correction, only by `reset()`.
+  const totalRestMs = useRef(0)
   // Per-rep quality: angle extremes + left/right difference for the rep in
   // progress, when each exercise last completed a rep (for tempo), and the
   // scored reps of the set in progress.
@@ -224,6 +228,7 @@ export function useExerciseTracker(landmarks) {
     speed: 0,
     peakAcceleration: 0,
     restElapsedMs: 0,
+    totalRestMs: 0,
     completedSets: [],
   })
 
@@ -239,6 +244,7 @@ export function useExerciseTracker(landmarks) {
     completedSets.current = []
     motion.current = { lastPoint: null, lastTime: null, velocity: 0, accel: 0, peakAccel: 0 }
     lastDecayTime.current = null
+    totalRestMs.current = 0
     repWindow.current = null
     lastRepAt.current = {}
     setReps.current = []
@@ -250,6 +256,7 @@ export function useExerciseTracker(landmarks) {
       speed: 0,
       peakAcceleration: 0,
       restElapsedMs: 0,
+      totalRestMs: 0,
       completedSets: [],
     })
   }
@@ -299,11 +306,11 @@ export function useExerciseTracker(landmarks) {
   useEffect(() => {
     if (state.phase !== 'resting') return undefined
     const interval = setInterval(() => {
-      setState((prev) =>
-        prev.phase === 'resting' && restStartedAt.current != null
-          ? { ...prev, restElapsedMs: performance.now() - restStartedAt.current }
-          : prev,
-      )
+      setState((prev) => {
+        if (prev.phase !== 'resting' || restStartedAt.current == null) return prev
+        const restElapsedMs = performance.now() - restStartedAt.current
+        return { ...prev, restElapsedMs, totalRestMs: totalRestMs.current + restElapsedMs }
+      })
     }, STOPWATCH_TICK_MS)
     return () => clearInterval(interval)
   }, [state.phase])
@@ -463,6 +470,7 @@ export function useExerciseTracker(landmarks) {
           speed: motion.current.velocity,
           peakAcceleration: motion.current.peakAccel,
           restElapsedMs: 0,
+          totalRestMs: totalRestMs.current,
           completedSets: completedSets.current,
         })
         return
@@ -483,7 +491,10 @@ export function useExerciseTracker(landmarks) {
 
       if (reachedGenuineRange) {
         // Confirmed — graduate to active, carrying over whatever it
-        // silently counted while pending.
+        // silently counted while pending. This closes out the rest period
+        // that was running up to this point, so fold its length into the
+        // session's running total before clearing restStartedAt.
+        if (restStartedAt.current != null) totalRestMs.current += now - restStartedAt.current
         phase.current = 'active'
         activeExercise.current = exerciseName
         lastActiveAt.current = now
@@ -501,6 +512,7 @@ export function useExerciseTracker(landmarks) {
           speed: motion.current.velocity,
           peakAcceleration: motion.current.peakAccel,
           restElapsedMs: 0,
+          totalRestMs: totalRestMs.current,
           completedSets: completedSets.current,
         })
         return
@@ -549,6 +561,7 @@ export function useExerciseTracker(landmarks) {
 
     // Still resting, or a candidate is pending but hasn't confirmed yet —
     // the UI shows Resting either way.
+    const restElapsedMs = restStartedAt.current != null ? now - restStartedAt.current : 0
     setState((prev) => ({
       phase: 'resting',
       exerciseName: null,
@@ -556,7 +569,8 @@ export function useExerciseTracker(landmarks) {
       scores: { ...scores.current },
       speed: 0,
       peakAcceleration: prev.peakAcceleration,
-      restElapsedMs: restStartedAt.current != null ? now - restStartedAt.current : 0,
+      restElapsedMs,
+      totalRestMs: totalRestMs.current + restElapsedMs,
       completedSets: completedSets.current,
     }))
   }, [landmarks])

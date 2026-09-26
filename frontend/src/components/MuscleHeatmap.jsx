@@ -8,7 +8,7 @@ import GlassTile from './GlassTile.jsx'
 // off the lightest/deepest stops; the 200/300/400 shades aren't fed in
 // directly but the library's interpolation lands close to them since
 // they're already a roughly linear progression between the two endpoints.
-const HEATMAP_RED = {
+export const HEATMAP_RED = {
   100: '#FADCDC',
   200: '#F6C1C2',
   300: '#F0999A',
@@ -50,10 +50,13 @@ const SURFACE_WHITE = '#FFFFFF'
  * that produces these scores). `values` expects a `{ score }` object per
  * group, so we wrap each raw number here.
  *
- * Front view only (no back) to keep this compact — its own tile in the
- * right-hand vertical column, below ExerciseTitle.jsx and RepCounter.jsx.
+ * Defaults to the front view only, to stay compact in its usual spot — its
+ * own tile in the right-hand vertical column, below ExerciseTitle.jsx and
+ * RepCounter.jsx. The Workout Saved summary screen renders two of these
+ * side by side (view="FRONT" and view="BACK") for a fuller picture of what
+ * was worked, matching @musclemap/react's own FRONT/BACK-only view prop.
  */
-export default function MuscleHeatmap({ scores = {}, figureWidth = 130 }) {
+export default function MuscleHeatmap({ scores = {}, figureWidth = 130, view = 'FRONT' }) {
   const values = Object.fromEntries(
     Object.entries(scores).map(([group, score]) => [group, { score }]),
   )
@@ -67,7 +70,7 @@ export default function MuscleHeatmap({ scores = {}, figureWidth = 130 }) {
       `}</style>
       <MuscleMap
         values={values}
-        view="FRONT"
+        view={view}
         glow
         showLegend={false}
         figureWidth={figureWidth}

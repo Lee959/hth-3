@@ -1,16 +1,5 @@
 import GlassTile from './GlassTile.jsx'
-
-const ASSUMED_MAX_HR = 180 // placeholder until the app has a real user-configured max HR
-
-// Same 5-zone model most fitness watches use (% of max HR), color-coded
-// low to high — the arc segment order below matches this array's order.
-const ZONES = [
-  { max: 60, label: 'Resting', color: '#60a5fa' },
-  { max: 70, label: 'Warm Up', color: '#22d3ee' },
-  { max: 80, label: 'Aerobic', color: '#4ade80' },
-  { max: 90, label: 'Anaerobic', color: '#fb923c' },
-  { max: Infinity, label: 'Max', color: '#f87171' },
-]
+import { ASSUMED_MAX_HR, HEART_RATE_ZONES as ZONES, zoneForPct } from '../lib/heartRateZones.js'
 
 const SIZE = 100
 const CENTER = SIZE / 2
@@ -32,10 +21,6 @@ function arcPath(startAngle, endAngle, radius) {
   return `M ${start.x} ${start.y} A ${radius} ${radius} 0 ${largeArc} 1 ${end.x} ${end.y}`
 }
 
-function zoneFor(pct) {
-  return ZONES.find((z) => pct <= z.max) ?? ZONES[ZONES.length - 1]
-}
-
 /**
  * Garmin-watch-style heart rate dial: a 270° zone-colored arc (resting ->
  * max, blue -> red) with a tick marking the current reading, a zone label,
@@ -45,7 +30,7 @@ function zoneFor(pct) {
  */
 export default function HeartRateGauge({ heartRateBpm }) {
   const pct = heartRateBpm ? Math.max(0, Math.min(100, (heartRateBpm / ASSUMED_MAX_HR) * 100)) : null
-  const zone = pct != null ? zoneFor(pct) : null
+  const zone = pct != null ? zoneForPct(pct) : null
   const pointerAngle = START_ANGLE + ((pct ?? 0) / 100) * SWEEP
   const pointerOuter = pointOnCircle(pointerAngle, RADIUS + STROKE / 2 + 3)
   const pointerInner = pointOnCircle(pointerAngle, RADIUS - STROKE / 2 - 3)

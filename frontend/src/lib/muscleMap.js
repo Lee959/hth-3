@@ -18,3 +18,25 @@ export const EXERCISE_MUSCLE_WEIGHTS = {
 export function muscleWeightsFor(exerciseName) {
   return EXERCISE_MUSCLE_WEIGHTS[exerciseName] ?? {}
 }
+
+// Score points a full-weight muscle gains per rep — shared by the live
+// heatmap (useExerciseTracker.js, which also decays this over time) and the
+// Workout Saved summary's whole-session heatmap (summaryScoresFor below,
+// which has no decay since it's a single point-in-time snapshot).
+export const LOAD_PER_REP = 30
+
+/**
+ * Whole-session muscle load, built straight from completedSets — unlike the
+ * live heatmap this isn't decayed over time or reset between sets, so it's
+ * a simple running total (still capped at 100) across every set the workout
+ * logged. Used by the Workout Saved summary screen's front+back heatmap.
+ */
+export function summaryScoresFor(completedSets) {
+  const scores = {}
+  for (const { exerciseName, reps } of completedSets) {
+    for (const [muscle, weight] of Object.entries(muscleWeightsFor(exerciseName))) {
+      scores[muscle] = Math.min(100, (scores[muscle] ?? 0) + LOAD_PER_REP * weight * reps)
+    }
+  }
+  return scores
+}

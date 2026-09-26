@@ -114,18 +114,23 @@ src/
   lib/
     poseMath.js                # landmark indices, angle-at-a-joint math, EMA smoothing
     repCounter.js                # generic angle-based rep state machine (up/down)
-    muscleMap.js                   # exercise -> { MUSCLE_GROUP: weight } for the heatmap
+    muscleMap.js                   # exercise -> { MUSCLE_GROUP: weight }; LOAD_PER_REP; summaryScoresFor()
+    heartRateZones.js                # shared HR zone model (live gauge + session summary)
+    workoutSummary.js                  # builds/[stub] persists the Workout Saved snapshot
   hooks/
     useCamera.js                     # the single getUserMedia() call (see above)
     usePoseDetection.js                # MediaPipe PoseLandmarker on the shared stream
-    useExerciseTracker.js                # landmarks -> exercise/reps/muscle LOAD scores/speed
+    useExerciseTracker.js                # landmarks -> exercise/reps/muscle LOAD scores/speed/totalRestMs
     useVitalsUpload.js                     # MediaRecorder chunks -> backend -> Presage
+    useCameraPalette.js                       # ported from dev/metrics-board; feeds AmbientBackground.jsx
   components/
     CameraFeed.jsx                 # <video> element, glass frame
-    MuscleHeatmap.jsx                # @musclemap/react wrapper (LOAD color model)
+    MuscleHeatmap.jsx                # @musclemap/react wrapper (LOAD color model), view="FRONT"|"BACK"
     GaugeRing.jsx                      # SVG ring gauge (heart rate zone, rep goal)
     MetricsSidebar.jsx                   # left sidebar: gauges, stat pills, quick actions
     RepCounter.jsx                         # big number + exercise name
+    WorkoutSummary.jsx                       # full-screen "Workout Saved" pop-out shown on End Workout
+    AmbientBackground.jsx                      # ported from dev/metrics-board; WorkoutSummary's backdrop
   pages/
     Dashboard.jsx                       # landing page
     WorkoutSession.jsx                    # wires camera + pose + tracker + sidebar together
@@ -219,29 +224,149 @@ everything the session page shows, entirely client-side:
    completedAt}`) is appended to `completedSets`, which `WorkoutSession.jsx`
    watches and persists via `POST /api/workouts/:id/sets` — the endpoint
    already existed on the backend but nothing called it until now.
-   `SetHistory.jsx` renders that same list locally as a quick "sets this
-   session" readout. This is intentionally minimal (no editing, no set
-   targets/goals yet) — a foundation for a real sets UI on the History
-   page, not the whole feature.
-7. Within one exercise, every completed rep adds LOAD points to that
+   `completedSets` is **not** rendered live anywhere in the session HUD —
+   an earlier version had a `SetHistory.jsx` tile in the right-hand column
+   for this, but five tiles vertically centered in that column could run
+   past a short mobile viewport and forced an internal scrollbar (see the
+   layout section below); rather than just tolerating that scrollbar, the
+   whole live session view now only shows the four *current-set* tiles, and
+   every session-level stat (sets, duration, rest, avg HR) is deferred to
+   the `WorkoutSummary.jsx` pop-out on End Workout instead (see below), so
+   nothing there needs to scroll.
+7. `totalRestMs` (returned by the hook alongside `restElapsedMs`) is the sum
+   of every *finished* rest period this session, not just the current one —
+   `restElapsedMs` resets to 0 each time a new set starts; `totalRestMs`
+   doesn't. It's folded in at the one place a rest period actually ends
+   (the pending→active graduation branch, where the hook adds `now -
+   restStartedAt.current` before clearing `restStartedAt`), plus whatever
+   of the *current* rest period has elapsed so far, so it's always
+   accurate to read at any point — including mid-rest, which is what lets
+   `WorkoutSession.jsx` grab it synchronously in `handleEndSession` without
+   waiting for a tick.
+8. Within one exercise, every completed rep adds LOAD points to that
    exercise's muscles via `lib/muscleMap.js`'s weight table (capped at 100,
    decaying slowly when idle) — so the heatmap reflects accumulated effort
    for the *current set*, matching `@musclemap/react`'s LOAD color model.
    `MuscleHeatmap.jsx` renders that score map directly.
-8. The same landmark stream feeds a simple velocity/acceleration estimate
-   (position delta / time, EMA-smoothed) shown as "Speed" / "Peak accel" in
-   the sidebar — relative units (fraction of frame size per second), not
-   calibrated to real-world meters. See the hook's doc comment for why.
+9. The same landmark stream feeds a simple velocity/acceleration estimate
+   (position delta / time, EMA-smoothed) — relative units (fraction of
+   frame size per second), not calibrated to real-world meters. See the
+   hook's doc comment for why. `useExerciseTracker` still computes and
+   returns `speed`/`peakAcceleration`; `MetricsSidebar.jsx` no longer
+   renders them (dropped as HUD noise), so nothing currently reads them.
+
+## Workout Saved summary (`WorkoutSummary.jsx`)
+
+Shown as a full-screen pop-out over the session HUD (`absolute inset-0
+z-30`) when the user hits End Workout — visual-only for now, per explicit
+scope: no backend persistence, just a clearly-marked stub (see below).
+
+**Background and tile style are ported from `dev/metrics-board`'s Dashboard
+redesign** (a separate branch's "metrics board" — not this branch's own
+`MetricsSidebar.jsx`, an earlier, since-superseded pass at matching that),
+rather than either this app's purple page gradient or the immersive
+session's flat black:
+
+- **`AmbientBackground.jsx`** (copied over, along with its
+  `useCameraPalette.js` hook, unmodified) — three blurred, slowly drifting
+  color glows over a near-black `bg-[#07060d]`, colored from the live
+  camera feed if `stream` is passed (still-open from the session even after
+  End Workout, since only pose detection paused, not the camera itself) or
+  a fixed fallback palette otherwise. Purely decorative (`aria-hidden`),
+  rendered once behind the summary's content (`relative z-10`).
+- **`.liquid-glass`** (new utility class in `styles/index.css`, also ported
+  unmodified) — a diagonal sheen gradient, saturated blur so the ambient
+  glows tint through it, and an inner highlight so tiles read as curved,
+  light-catching slabs, instead of a flat fill. `WorkoutSummary.jsx`'s
+  title, stat tiles, the load-legend pill, the exercises table, and the
+  Home/New Workout buttons all use it directly (`rounded-3xl` for boxy
+  tiles, `rounded-full` for pills). `MuscleHeatmap.jsx` still goes through
+  `GlassTile.jsx` rather than using `.liquid-glass` directly — no
+  practical difference any more, since `GlassTile.jsx` itself became a
+  thin `.liquid-glass rounded-2xl` wrapper once the immersive HUD adopted
+  this same class too (see "Design: Liquid Glass" below).
+- **Stat tile numbers are `font-rajdhani font-bold` (matching
+  `dev/metrics-board`'s own `StatTile`), not `font-anton`** — Anton stays
+  reserved for `RepCounter.jsx`/`RestTimer.jsx`'s live scoreboard numbers
+  only, so a "big Anton number" always means something happening *right
+  now*, never a static summary value.
+
+- **Snapshot, not live state.** `WorkoutSession.jsx`'s `handleEndSession`
+  calls `buildWorkoutSummary()` (`lib/workoutSummary.js`) *before* calling
+  `useExerciseTracker`'s `reset()` — `reset()` clears `completedSets` and
+  `totalRestMs`, so this is the only point that data is still readable.
+  `buildWorkoutSummary` bundles `completedSets`, `totalDurationMs` (wall
+  clock since a `sessionStartedAtRef` captured at mount — separate from the
+  tracker, since a workout's total duration outlives any one rest/active
+  phase), `totalRestMs`, average heart rate (mean of every `heart_rate_bpm`
+  reading in `vitals`), and `summaryScoresFor(completedSets)` — a whole-
+  session muscle heatmap built the same way the live one is (same
+  `LOAD_PER_REP` weight table in `lib/muscleMap.js`) but summed once from
+  the final set list instead of decaying frame-by-frame.
+- **Front + back heatmap.** `@musclemap/react`'s `view` prop is `"FRONT"` or
+  `"BACK"` only (no `"BOTH"`), so the summary renders two `MuscleHeatmap.jsx`
+  tiles side by side with `view="FRONT"` and `view="BACK"` — `MuscleHeatmap`
+  now takes `view` as a prop (default `"FRONT"`, unchanged for its usual
+  spot in the live HUD) rather than hardcoding it. A light-to-heavy-load
+  gradient swatch underneath (reusing the exported `HEATMAP_RED` scale)
+  stands in for a legend, since the color model here is a continuous 0-100
+  score, not discrete primary/secondary/untargeted categories.
+- **Heart rate zone** reuses the same 5-zone model as the live
+  `HeartRateGauge.jsx` dial, now factored out into `lib/heartRateZones.js`
+  (`HEART_RATE_ZONES`, `zoneForBpm`) so both places share one definition.
+- **Exercise table** groups the flat `completedSets` log by exercise name
+  into SETS/total-REPS rows (`groupSets()` in `WorkoutSummary.jsx`), styled
+  as a name-left/numbers-right list — the format asked for was a workout-
+  plan-style table, not a per-set chronological log like the old
+  `SetHistory.jsx` did.
+- **Persistence stub.** `stubSaveWorkoutSummary()` in `lib/workoutSummary.js`
+  just logs the snapshot and resolves `{ saved: false }` — a real call site
+  for whenever a `POST /api/workouts/:id/summary`-style endpoint exists,
+  intentionally not built yet (no schema/architecture decisions made here).
+- **"New Workout"** clears the summary and resets `sessionStartedAtRef`
+  without leaving `/session` (stays in the immersive view); **"Home"**
+  navigates back to `/` via the existing back-button route.
 
 ## Design: "Liquid Glass"
 
-The UI follows a frosted-glass look: `bg-white/10 backdrop-blur-xl border
-border-white/20` cards over a `from-indigo-950 via-violet-900
-to-fuchsia-900` gradient background, white text, rounded-full nav/buttons.
-`GlassTile.jsx` is the one shared surface every HUD element sits in now —
-**each metric, control, and readout gets its own tile** rather than
-several elements sharing one big card (compose it with layout classes via
-`className`; don't reinvent the border/blur/shadow combo elsewhere).
+The whole app — immersive session HUD included — now sits on one glass
+surface: the `.liquid-glass` utility class (`styles/index.css`, ported from
+the `dev/metrics-board` branch's Dashboard redesign, which merged into
+`main`; see "Workout Saved summary" above for the fuller writeup of where it
+first landed on this branch). It's a richer surface than a flat `bg-white/10`
+fill — a diagonal sheen gradient, saturated blur so whatever's behind it
+(the `AmbientBackground.jsx` glows on non-immersive pages, or just the
+camera feed on `/session`) tints through, and an inner top highlight so a
+tile reads as a curved, light-catching slab rather than a flat pane.
+White text, rounded-full nav/buttons/pills throughout.
+
+`GlassTile.jsx` is the one shared wrapper every *immersive-HUD* element
+sits in — **each metric, control, and readout gets its own tile** rather
+than several elements sharing one big card — and is now just `.liquid-glass
+rounded-2xl` plus whatever layout classes the caller passes via
+`className`; don't reinvent the border/blur/shadow combo elsewhere. Every
+non-immersive surface (`Dashboard.jsx`'s cards, `WorkoutSummary.jsx`, the
+top nav/header in `App.jsx`) uses `.liquid-glass` directly rather than
+through `GlassTile.jsx`, since `GlassTile.jsx` is scoped to the immersive
+HUD's own tile shape (`rounded-2xl`) — but it's the same underlying class
+either way, so nothing in the app still uses the old flat fill.
+
+**The session's End Workout button (`SessionControls.jsx`) is styled off
+`StartWorkoutDock.jsx`'s "Start workout" button** (`StopIcon`/"End workout"
+in place of `PlayIcon`/"Start workout"; a `<button onClick>` instead of a
+`<Link>`, since it fires a handler rather than navigating) rather than a
+plain `GlassTile`/`.liquid-glass` tile — same `h-12 w-12` white/black-icon
+badge, same `.liquid-glass` pill with the same
+`shadow-[0_20px_50px_-12px_rgba(0,0,0,0.8)]`, same rose/fuchsia/teal glow
+blooming behind it and `-translate-y-1 scale-105`/badge `scale-110` "pop"
+on hover or focus — so ending a workout reads as the same primary-action
+language as starting one. One deliberate difference from
+`StartWorkoutDock.jsx`: **the label is icon-only at rest, growing in on
+hover/focus** (`max-w-0 -> max-w-xs` plus `pl-0 -> pl-4` on the label,
+`pr-2.5 -> pr-8` on the pill in step) rather than always shown — this
+button floats directly over the live HUD rather than sitting in its own
+dock below the fold, so it stays visually quiet until the user's actually
+reaching for it.
 
 Two type families, applied consistently: **Anton** for the one thing that
 should read as a giant scoreboard number — the rep count in
@@ -261,8 +386,9 @@ silently does nothing, restart before assuming the class name is wrong.
 independently-positioned glass tiles floating over it as a heads-up
 display, rather than full-width side panels:
 
-- **Top-left:** a circular back-to-Home button (`BackIcon`), since the top
-  nav bar is hidden on this route (see below) and this is the only way out.
+- **No back button.** An earlier version had one, top-left — removed since
+  ending the workout (see below) is the one action this screen needs to
+  offer; the browser's own back navigation still works as an escape hatch.
 - **Top-middle, but only while resting:** `RestTimer.jsx` — the rest
   stopwatch, shown in place of nothing (there's no permanent element here)
   whenever `phase === 'resting'` and `restElapsedMs > 0`. Same `font-anton`
@@ -271,18 +397,21 @@ display, rather than full-width side panels:
   competing for weight — they're never both on screen at once anyway,
   since a set is either active (showing reps) or resting (showing this).
 - **Upper-left, below that:** `MetricsSidebar.jsx` — a narrow (`w-36`)
-  vertical stack of individually-tiled metrics: `HeartRateGauge.jsx`,
-  breathing, speed, peak accel. Each is its own `GlassTile`, not sections
-  sharing one card.
+  vertical stack of individually-tiled metrics: `HeartRateGauge.jsx` and
+  breathing. Each is its own `GlassTile`, not sections sharing one card.
+  Speed/peak-acceleration tiles used to live here too — removed as HUD
+  noise (see the tracking section above for where that data still lives).
 - **Far right edge, vertically centered:** a narrow vertical column, top to
   bottom — `ExerciseTitle.jsx` (current exercise name), `MuscleHeatmap.jsx`
-  (front view only — `view="FRONT"`, not `"BOTH"`, to stay compact at this
+  (front view only — `view="FRONT"`, not `"BACK"`, to stay compact at this
   width), `RepCounter.jsx` (the big Anton number, rep count only — no
-  phase-awareness; see `RestTimer.jsx` above for that), a rep-goal
-  `GaugeRing.jsx`, then `SetHistory.jsx` — five separate tiles stacked with
-  `gap-3`, not one shared card. Rep goal lives here rather than in the left
-  HUD because it's part of "what am I doing and how's it going," which
-  reads better next to the exercise name than next to heart rate/breathing.
+  phase-awareness; see `RestTimer.jsx` above for that), then a rep-goal
+  `GaugeRing.jsx` — four separate tiles stacked with `gap-3`, not one shared
+  card. Rep goal lives here rather than in the left HUD because it's part of
+  "what am I doing and how's it going," which reads better next to the
+  exercise name than next to heart rate/breathing. Session-level stats
+  (sets, total/rest time, avg HR) are deliberately **not** in this column —
+  see "Workout Saved summary" above for where they live instead.
 
 **Heart rate gets its own dedicated dial, not the generic `GaugeRing.jsx`.**
 `HeartRateGauge.jsx` is a Garmin-watch-style widget: a 270° arc split into
@@ -295,21 +424,31 @@ ring), which is why it's a separate component rather than a prop variant —
 forcing both shapes through one component would make either one harder to
 read. `GaugeRing.jsx` is still what everything else uses (rep goal here).
 - **Bottom-middle:** the Auth0 setup notice (if `!configured`) stacked
-  directly above `SessionControls.jsx` (Reset/Pause-or-Resume/End as flat
-  vector SVG icons only, no text labels — `title`/`aria-label` carry the
-  label instead), in its own small standout rectangle. The notice is
-  *first* in that flex column and the controls are *last*, so the controls
-  stay pinned to the same `bottom-6` position whether or not the notice
-  above them is showing, rather than shifting position based on it.
+  directly above `SessionControls.jsx` — now a single End Workout control
+  (Reset and Pause/Resume were dropped; ending the workout is the only
+  thing this screen lets you do to it), icon-only at rest with its label
+  hidden (`max-w-0 opacity-0`) rather than a `title`/`aria-label`-only
+  affordance. Hovering or focusing it grows the label in
+  (`group-hover:max-w-[10rem] group-hover:opacity-100`, `overflow-hidden`
+  clipping the growing text so it slides rather than snaps) instead of
+  showing it permanently — the pill stays visually quiet until the user's
+  actually reaching for it. The notice is *first* in that flex column and
+  the control is *last*, so it stays pinned to the same `bottom-6` position
+  whether or not the notice above it is showing, rather than shifting
+  position based on it.
 
-**The left and right columns cap their height and scroll internally**
-(`max-h-[62vh] overflow-y-auto`) rather than assuming their content always
-fits — five tiles vertically centered can genuinely run past a short
-viewport (a real bug caught on mobile during development, not a
-hypothetical), and centering alone doesn't know to leave room for the
-bottom-middle controls/notice. If you add another tile to either column,
-re-check this on a short/mobile viewport rather than assuming the existing
-budget still has room.
+**The left column caps its height and scrolls internally**
+(`max-h-[62vh] overflow-y-auto`) rather than assuming its content always
+fits — its 4 tiles are a fixed set today, but centering alone doesn't know
+to leave room for the bottom-middle controls/notice on a short viewport, so
+the cap is kept as a safety net. The right column dropped this same
+treatment once `SetHistory.jsx` was removed from it (4 tiles now fit
+comfortably within a normal viewport without it — the internal scrollbar
+that treatment produced was the actual complaint that led to moving session
+stats into `WorkoutSummary.jsx` instead of just tolerating it). If you add
+another tile to either column, re-check on a short/mobile viewport rather
+than assuming the existing budget still has room — re-add the cap to the
+right column too if it's ever needed again.
 
 Because every element here is a small, fixed-width tile rather than a
 width-dependent column (the old design's `sm:w-1/4` side panels), **the
@@ -321,16 +460,14 @@ than assuming it forever.
 
 **The top nav bar is hidden entirely on `/session`** (see `App.jsx`'s
 `immersive = location.pathname === '/session'` check) for a full-screen,
-distraction-free view — nothing here has a header around it.
-`WorkoutSession` carries its own small back-to-Home button instead so the
-route isn't a dead end. Any absolutely-positioned banner on this page (the
-"Auth0 isn't configured" notice) has to be checked against both the back
-button and `SessionControls` — they've already collided twice (the banner
-is wide enough on narrow screens to cover the back button, and separately
-covered `SessionControls` before it moved to the bottom); the fix both
-times was vertical separation (`top-16`/`top-4` breakpoint split, or moving
-the controls to the opposite end of the screen), not z-index, since
-z-index alone would still block clicks on whichever element loses.
+distraction-free view — nothing here has a header around it, and (since the
+back button was removed) nothing at the top at all unless a set is resting.
+Any absolutely-positioned banner on this page (the "Auth0 isn't configured"
+notice) has to be checked against `SessionControls` — it covered the
+controls once before the notice moved above them in the same bottom-anchored
+flex column (see above); the fix was vertical separation (moving the
+controls to their own end of that column), not z-index, since z-index alone
+would still block clicks on whichever element loses.
 
 `App.jsx`'s shell is a fixed-height flex column (`h-screen flex flex-col
 overflow-hidden`, with `<main>` as `flex-1 overflow-y-auto`) rather than a
