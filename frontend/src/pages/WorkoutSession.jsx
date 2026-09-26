@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 
 import CameraFeed from '../components/CameraFeed.jsx'
+import ConnectionWarning from '../components/ConnectionWarning.jsx'
 import ExerciseTitle from '../components/ExerciseTitle.jsx'
 import GaugeRing from '../components/GaugeRing.jsx'
 import MetricsSidebar from '../components/MetricsSidebar.jsx'
@@ -216,6 +217,7 @@ export default function WorkoutSession() {
           where the rest timer and (on narrow screens) the HUD tiles already
           compete for space. */}
       <div className="absolute bottom-6 left-1/2 z-10 flex -translate-x-1/2 flex-col items-center gap-3">
+        <ConnectionWarning className="w-[90vw] max-w-sm" />
         {!configured && (
           <p className="w-[90vw] max-w-sm rounded-2xl border border-amber-300/30 bg-amber-500/20 p-3 text-center text-sm text-amber-100 shadow-lg backdrop-blur-xl">
             Dev mode: Auth0 isn't configured, so this workout saves to the demo user (see
