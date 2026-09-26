@@ -109,7 +109,7 @@ export default function WorkoutSession() {
     lastReadingAtRef.current = now
     if (bpm == null) return null
     const reading = {
-      heart_rate_bpm: bpm,
+      heart_rate_bpm: Math.round(bpm),
       recorded_at: new Date(from).toISOString(),
       window_sec: (now - from) / 1000,
     }

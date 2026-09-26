@@ -41,7 +41,7 @@ class VitalsReading(db.Model):
             "session_id": self.session_id,
             "recorded_at": self.recorded_at.isoformat() if self.recorded_at else None,
             "window_sec": self.window_sec,
-            "heart_rate_bpm": self.heart_rate_bpm,
+            "heart_rate_bpm": round(self.heart_rate_bpm) if self.heart_rate_bpm is not None else None,
             "breathing_rate_bpm": self.breathing_rate_bpm,
             "hrv_ms": self.hrv_ms,
             "source": self.source,
