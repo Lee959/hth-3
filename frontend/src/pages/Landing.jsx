@@ -1,102 +1,112 @@
-import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { motion, useScroll } from 'framer-motion'
+import { useRef } from 'react'
+import { Link } from 'react-router-dom'
 
-const TESTIMONIALS = [
-  'Taught me so much!',
-  'So convient, love how hands-free it is',
-  "Love that it's open source",
-  "I dont have to spend any $$ on fitbits",
+import AnimatedBrandTitle from '../components/AnimatedBrandTitle.jsx'
+import MetricsMarquee, { MetricsGridStatic } from '../components/MetricsMarquee.jsx'
+import PerspectiveImage from '../components/PerspectiveImage.jsx'
+import StampedReview from '../components/StampedReview.jsx'
+import WaveField from '../components/WaveField.jsx'
+import { useAppScrollContainer } from '../hooks/useAppScrollContainer.js'
+
+const BOXER_SRC = '/images/boxer-hero.svg'
+
+const REVIEWS = [
+  {
+    quote:
+      'The rep counter never loses track of me mid-set, and seeing the muscle heatmap light up after a workout is oddly addictive.',
+    name: 'Jordan M.',
+    role: 'Home gym, 4x/week',
+  },
+  {
+    quote: "No wearable, no chest strap — it reads my heart rate straight off the camera and it's scarily accurate.",
+    name: 'Priya K.',
+    role: 'Marathon training',
+  },
 ]
 
-function ArrowIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
-      <path d="M5 12h14" />
-      <path d="M13 5l7 7-7 7" />
-    </svg>
-  )
+const CTA_REVEAL = {
+  hidden: { y: 60, opacity: 0 },
+  visible: { y: 0, opacity: 1, transition: { duration: 0.6, ease: 'easeOut' } },
 }
 
+/**
+ * The marketing landing page ("/" — see App.jsx). Sits under the app's
+ * shared header (no page-specific navbar here; that's App.jsx's job on
+ * every non-immersive route), on a black background per this pass's brief.
+ *
+ * Two parallel layouts, split by the `md:` breakpoint rather than one
+ * responsive tree: the desktop version's hero and metrics section each
+ * need a tall scroll "track" (multiple viewport-heights) with pinned
+ * (`sticky`) content inside it purely to give scroll-linked animations
+ * (WaveField.jsx's waves, PerspectiveImage.jsx's tilt, MetricsMarquee.jsx's
+ * opposite-direction drift) room to play out — none of that fits a phone
+ * screen's scroll budget or motion tolerance, so mobile gets a plain,
+ * static, single flowing layout instead (see each component's own doc
+ * comment for its specific mobile fallback). `hidden md:block` / `md:hidden`
+ * toggles fully remove whichever tree isn't showing, so the tall desktop
+ * tracks don't leave a dead scroll gap on mobile.
+ */
 export default function Landing() {
-  const navigate = useNavigate()
-  const [index, setIndex] = useState(0)
-
-  useEffect(() => {
-    const id = setInterval(() => {
-      setIndex((value) => (value + 1) % TESTIMONIALS.length)
-    }, 2800)
-    return () => clearInterval(id)
-  }, [])
-
-  function startSignup() {
-    navigate('/register')
-  }
-
-  function startSignin() {
-    navigate('/signin')
-  }
+  const heroRef = useRef(null)
+  const scrollContainer = useAppScrollContainer()
+  const { scrollYProgress: heroProgress } = useScroll({
+    target: heroRef,
+    container: scrollContainer,
+    offset: ['start start', 'end start'],
+  })
 
   return (
-    <div className="mx-auto flex min-h-full w-full max-w-5xl flex-col gap-8 px-4 pb-10 pt-4 md:gap-10 md:px-8 md:pt-8">
-      <section className="liquid-glass rounded-[2rem] px-6 py-10 text-center md:px-10 md:py-14">
-        <h1 className="font-rajdhani text-5xl font-bold uppercase tracking-wide text-white md:text-7xl">Account-ABLE</h1>
-      </section>
-
-      <section className="liquid-glass grid gap-6 rounded-[2rem] p-5 md:grid-cols-[1fr_1.2fr] md:items-center md:gap-8 md:p-8">
-        <div className="order-2 flex flex-col gap-4 md:order-1">
-          <p className="font-rajdhani text-xs font-bold uppercase tracking-[0.2em] text-white/60">What people say</p>
-          <div className="min-h-[84px] rounded-2xl border border-white/10 bg-white/5 px-4 py-5">
-            <p className="font-rajdhani text-2xl font-semibold leading-tight text-white">“{TESTIMONIALS[index]}”</p>
-          </div>
-          <div className="flex items-center gap-2">
-            {TESTIMONIALS.map((quote, quoteIndex) => (
-              <button
-                key={quote}
-                type="button"
-                onClick={() => setIndex(quoteIndex)}
-                aria-label={`Show quote ${quoteIndex + 1}`}
-                className={`h-2.5 w-7 rounded-full transition ${
-                  quoteIndex === index ? 'bg-white/90' : 'bg-white/25 hover:bg-white/50'
-                }`}
-              />
-            ))}
-          </div>
+    <div className="bg-black">
+      {/* Hero — desktop */}
+      <div ref={heroRef} className="relative hidden h-[220vh] md:block">
+        <div className="sticky top-0 flex h-screen flex-col items-center justify-center gap-10 overflow-hidden px-4">
+          <WaveField scrollYProgress={heroProgress} />
+          <AnimatedBrandTitle className="relative z-10 text-center" />
+          <PerspectiveImage scrollYProgress={heroProgress} src={BOXER_SRC} className="relative z-10 w-full max-w-2xl" />
         </div>
+      </div>
 
-        <div className="order-1 md:order-2">
-          <img
-            src="https://images.unsplash.com/photo-1518611012118-696072aa579a?auto=format&fit=crop&w=1200&q=80"
-            alt="Woman working out"
-            className="h-72 w-full rounded-3xl object-cover md:h-96"
-            loading="lazy"
-          />
-        </div>
-      </section>
+      {/* Hero — mobile: same title animation (a one-shot viewport trigger,
+          not scroll-linked, so it works fine here too), flat image, no
+          waves/tilt/tall track. */}
+      <div className="flex flex-col items-center gap-6 px-4 pb-10 pt-10 md:hidden">
+        <AnimatedBrandTitle className="text-center" />
+        <img src={BOXER_SRC} alt="" className="w-full max-w-sm select-none" draggable={false} />
+      </div>
 
-      <section className="liquid-glass flex flex-col items-center gap-5 rounded-[2rem] px-6 py-9 text-center md:px-10 md:py-12">
-        <h2 className="font-rajdhani text-3xl font-bold uppercase tracking-wide text-white md:text-4xl">
-          Discover the best workout companion
-        </h2>
+      {/* Metrics + reviews — desktop: reviews flank the marquee */}
+      <div className="hidden md:grid md:grid-cols-[280px_minmax(0,1fr)_280px] md:items-center md:gap-6 md:px-8 md:py-16">
+        <StampedReview {...REVIEWS[0]} />
+        <MetricsMarquee />
+        <StampedReview {...REVIEWS[1]} />
+      </div>
 
-        <button
-          type="button"
-          onClick={startSignup}
-          title="Create account"
-          className="flex h-14 w-14 items-center justify-center rounded-full bg-white text-slate-900 transition hover:bg-white/90 disabled:cursor-not-allowed disabled:bg-white/25 disabled:text-white/60"
-          aria-label="Sign up"
-        >
-          <ArrowIcon />
-        </button>
+      {/* Metrics + reviews — mobile: stacked, static grid, no drift */}
+      <div className="flex flex-col gap-6 px-4 py-12 md:hidden">
+        <StampedReview {...REVIEWS[0]} />
+        <MetricsGridStatic />
+        <StampedReview {...REVIEWS[1]} />
+      </div>
 
-        <button
-          type="button"
-          onClick={startSignin}
-          title="Sign in"
-          className="font-rajdhani text-sm font-semibold uppercase tracking-wide text-white/80 transition hover:text-white disabled:cursor-not-allowed disabled:text-white/45"
-        >
-          Already have an account?
-        </button>
-      </section>
+      {/* Closing CTA */}
+      <motion.div
+        initial="hidden"
+        whileInView="visible"
+        viewport={{ once: true, amount: 0.6 }}
+        variants={CTA_REVEAL}
+        className="px-4 pb-24 pt-4 text-center md:pb-32"
+      >
+        <Link to="/register" className="group inline-block">
+          <span className="font-rajdhani text-2xl font-bold uppercase tracking-wide text-white md:text-4xl">
+            Discover the best workout companion{' '}
+          </span>
+          <span className="relative inline-block font-rajdhani text-2xl font-bold uppercase tracking-wide text-accent-400 transition-transform duration-300 ease-out group-hover:scale-110 group-hover:[text-shadow:0_0_24px_rgba(230,86,89,0.9)] md:text-4xl">
+            now
+            <span className="absolute inset-x-0 -bottom-1 h-0.5 origin-left scale-x-0 bg-accent-400 transition-transform duration-300 ease-out group-hover:scale-x-100" />
+          </span>
+        </Link>
+      </motion.div>
     </div>
   )
 }
