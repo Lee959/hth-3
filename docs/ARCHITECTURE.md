@@ -275,14 +275,16 @@ session's flat black:
   a fixed fallback palette otherwise. Purely decorative (`aria-hidden`),
   rendered once behind the summary's content (`relative z-10`).
 - **`.liquid-glass`** (new utility class in `styles/index.css`, also ported
-  unmodified) — a richer glass surface than `GlassTile.jsx`'s flat
-  `bg-white/10`: a diagonal sheen gradient, saturated blur so the ambient
+  unmodified) — a diagonal sheen gradient, saturated blur so the ambient
   glows tint through it, and an inner highlight so tiles read as curved,
-  light-catching slabs. `WorkoutSummary.jsx`'s title, stat tiles, the
-  load-legend pill, the exercises table, and the Home/New Workout buttons
-  all use it (`rounded-3xl` for boxy tiles, `rounded-full` for pills) —
-  `MuscleHeatmap.jsx` keeps its own `GlassTile`, since that component is
-  shared with the live HUD and wasn't in scope for this pass.
+  light-catching slabs, instead of a flat fill. `WorkoutSummary.jsx`'s
+  title, stat tiles, the load-legend pill, the exercises table, and the
+  Home/New Workout buttons all use it directly (`rounded-3xl` for boxy
+  tiles, `rounded-full` for pills). `MuscleHeatmap.jsx` still goes through
+  `GlassTile.jsx` rather than using `.liquid-glass` directly — no
+  practical difference any more, since `GlassTile.jsx` itself became a
+  thin `.liquid-glass rounded-2xl` wrapper once the immersive HUD adopted
+  this same class too (see "Design: Liquid Glass" below).
 - **Stat tile numbers are `font-rajdhani font-bold` (matching
   `dev/metrics-board`'s own `StatTile`), not `font-anton`** — Anton stays
   reserved for `RepCounter.jsx`/`RestTimer.jsx`'s live scoreboard numbers
@@ -327,24 +329,38 @@ session's flat black:
 
 ## Design: "Liquid Glass"
 
-The UI follows a frosted-glass look: `bg-white/10 backdrop-blur-xl border
-border-white/20` cards over a `from-indigo-950 via-violet-900
-to-fuchsia-900` gradient background, white text, rounded-full nav/buttons.
-`GlassTile.jsx` is the one shared surface every *immersive-HUD* element
-sits in — **each metric, control, and readout gets its own tile** rather
-than several elements sharing one big card (compose it with layout classes
-via `className`; don't reinvent the border/blur/shadow combo elsewhere).
+The whole app — immersive session HUD included — now sits on one glass
+surface: the `.liquid-glass` utility class (`styles/index.css`, ported from
+the `dev/metrics-board` branch's Dashboard redesign, which merged into
+`main`; see "Workout Saved summary" above for the fuller writeup of where it
+first landed on this branch). It's a richer surface than a flat `bg-white/10`
+fill — a diagonal sheen gradient, saturated blur so whatever's behind it
+(the `AmbientBackground.jsx` glows on non-immersive pages, or just the
+camera feed on `/session`) tints through, and an inner top highlight so a
+tile reads as a curved, light-catching slab rather than a flat pane.
+White text, rounded-full nav/buttons/pills throughout.
 
-**The non-immersive pages use the richer `.liquid-glass` utility class
-instead** (`styles/index.css`, ported from the `dev/metrics-board` branch —
-see "Workout Saved summary" above for the fuller writeup of where it came
-from): a diagonal sheen instead of a flat fill, saturated blur, and an
-inner highlight so a tile reads as a curved, light-catching slab. Right
-now that's `Dashboard.jsx`'s main card and everything in
-`WorkoutSummary.jsx`; `GlassTile.jsx` usage elsewhere (the immersive HUD,
-`History.jsx`, the top nav in `App.jsx`) is untouched — this was a
-deliberate, scoped port, not a full replacement of one style with the
-other.
+`GlassTile.jsx` is the one shared wrapper every *immersive-HUD* element
+sits in — **each metric, control, and readout gets its own tile** rather
+than several elements sharing one big card — and is now just `.liquid-glass
+rounded-2xl` plus whatever layout classes the caller passes via
+`className`; don't reinvent the border/blur/shadow combo elsewhere. Every
+non-immersive surface (`Dashboard.jsx`'s cards, `WorkoutSummary.jsx`, the
+top nav/header in `App.jsx`) uses `.liquid-glass` directly rather than
+through `GlassTile.jsx`, since `GlassTile.jsx` is scoped to the immersive
+HUD's own tile shape (`rounded-2xl`) — but it's the same underlying class
+either way, so nothing in the app still uses the old flat fill.
+
+**The session's End Workout button (`SessionControls.jsx`) is styled to
+match `StartWorkoutDock.jsx`'s "Start workout" button instead of a plain
+`GlassTile`/`.liquid-glass` tile** — a `.liquid-glass` pill wrapped around a
+solid white, black-icon badge with its own glow
+(`shadow-[0_0_24px_rgba(255,255,255,0.6)]`, intensifying on hover), so
+ending a workout reads as the same "primary action" visual language as
+starting one rather than a neutral HUD control. It's icon-only at rest,
+expanding on hover/focus to reveal an "End Workout" label
+(`max-w-0 -> max-w-[10rem]` on the label, not the button, so the reveal
+slides instead of snapping).
 
 Two type families, applied consistently: **Anton** for the one thing that
 should read as a giant scoreboard number — the rep count in
