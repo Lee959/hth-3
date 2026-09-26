@@ -1,7 +1,7 @@
 import { motion, useScroll } from 'framer-motion'
 import { useRef } from 'react'
-import { Link } from 'react-router-dom'
 
+import { useLoginRedirect } from '../auth/useLoginRedirect.js'
 import AnimatedBrandTitle from '../components/AnimatedBrandTitle.jsx'
 import MetricsMarquee, { MetricsGridStatic } from '../components/MetricsMarquee.jsx'
 import PerspectiveImage from '../components/PerspectiveImage.jsx'
@@ -10,6 +10,16 @@ import WaveField from '../components/WaveField.jsx'
 import { useAppScrollContainer } from '../hooks/useAppScrollContainer.js'
 
 const BOXER_SRC = '/images/boxer-hero.svg'
+
+// A dark diagonal blend of the app's three signature glow colors (rose,
+// violet, teal — see AmbientBackground.jsx's DEFAULT_GLOWS) instead of flat
+// black: still dark enough for the white title/pink waves to read clearly,
+// but gives the liquid-glass panels something colorful to actually tint
+// and blur (see index.css's .liquid-glass backdrop-filter). `bg-fixed`
+// pins it to the viewport rather than the (many-viewport-heights-tall)
+// scrolling content, so all three colors stay visible together at any
+// scroll position instead of one solid band showing at a time.
+const LANDING_BACKDROP = 'bg-[linear-gradient(160deg,#2b0a16_0%,#1a1030_50%,#04211d_100%)] bg-fixed'
 
 const REVIEWS_LEFT = [
   {
@@ -58,7 +68,7 @@ const CTA_REVEAL = {
 /**
  * The marketing landing page ("/" — see App.jsx). Sits under the app's
  * shared header (no page-specific navbar here; that's App.jsx's job on
- * every non-immersive route), on a black background per this pass's brief.
+ * every non-immersive route), on the tri-color backdrop defined above.
  *
  * Two parallel layouts, split by the `md:` breakpoint rather than one
  * responsive tree: the desktop version's hero and metrics section each
@@ -80,9 +90,10 @@ export default function Landing() {
     container: scrollContainer,
     offset: ['start start', 'end start'],
   })
+  const { startLogin, canStartAuth } = useLoginRedirect()
 
   return (
-    <div className="bg-black">
+    <div className={LANDING_BACKDROP}>
       {/* Hero — desktop */}
       <div ref={heroRef} className="relative hidden h-[220vh] md:block">
         <div className="sticky top-0 flex h-screen flex-col items-center gap-10 overflow-hidden px-4 pt-20 md:pt-28">
@@ -134,7 +145,17 @@ export default function Landing() {
         variants={CTA_REVEAL}
         className="px-4 pb-24 pt-4 text-center md:pb-32"
       >
-        <Link to="/register" className="group inline-block">
+        {/* Straight to Auth0 (useLoginRedirect — the same handoff the
+            header's "Log in" button used before it was dropped from this
+            page), not a Link to /register — one less stop between "now"
+            and actually signing up. */}
+        <button
+          type="button"
+          onClick={startLogin}
+          disabled={!canStartAuth}
+          title={canStartAuth ? undefined : 'Needs Auth0 configured — see docs/SETUP.md'}
+          className="group inline-block disabled:cursor-not-allowed disabled:opacity-50"
+        >
           <span className="font-rajdhani text-2xl font-bold uppercase tracking-wide text-white md:text-4xl">
             Discover the best workout companion{' '}
           </span>
@@ -142,7 +163,7 @@ export default function Landing() {
             now
             <span className="absolute inset-x-0 -bottom-1 h-0.5 origin-left scale-x-0 bg-accent-400 transition-transform duration-300 ease-out group-hover:scale-x-100" />
           </span>
-        </Link>
+        </button>
       </motion.div>
     </div>
   )
