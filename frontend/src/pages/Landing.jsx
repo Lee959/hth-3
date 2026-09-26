@@ -11,7 +11,7 @@ import { useAppScrollContainer } from '../hooks/useAppScrollContainer.js'
 
 const BOXER_SRC = '/images/boxer-hero.svg'
 
-const REVIEWS = [
+const REVIEWS_LEFT = [
   {
     quote:
       'The rep counter never loses track of me mid-set, and seeing the muscle heatmap light up after a workout is oddly addictive.',
@@ -22,6 +22,31 @@ const REVIEWS = [
     quote: "No wearable, no chest strap — it reads my heart rate straight off the camera and it's scarily accurate.",
     name: 'Priya K.',
     role: 'Marathon training',
+  },
+  {
+    quote:
+      'Pose tracking running entirely on-device, no lag between a rep and the counter updating — whoever built the model tuned it well.',
+    name: 'Dev R.',
+    role: 'Software engineer',
+  },
+]
+
+const REVIEWS_RIGHT = [
+  {
+    quote: "The form-improvement chart is what keeps me coming back — I can actually see my squat depth trending up week over week.",
+    name: 'Alicia N.',
+    role: 'Powerlifting, 3x/week',
+  },
+  {
+    quote:
+      'Camera-based respiration rate alongside heart rate is not something I expected to work this well without a chest strap.',
+    name: 'Marcus T.',
+    role: 'Endurance athlete',
+  },
+  {
+    quote: 'Genuinely surprised a browser tab can do real-time pose estimation this smoothly on a five-year-old laptop.',
+    name: 'Wei C.',
+    role: 'ML engineer',
   },
 ]
 
@@ -60,10 +85,10 @@ export default function Landing() {
     <div className="bg-black">
       {/* Hero — desktop */}
       <div ref={heroRef} className="relative hidden h-[220vh] md:block">
-        <div className="sticky top-0 flex h-screen flex-col items-center justify-center gap-10 overflow-hidden px-4">
+        <div className="sticky top-0 flex h-screen flex-col items-center gap-10 overflow-hidden px-4 pt-20 md:pt-28">
           <WaveField scrollYProgress={heroProgress} />
           <AnimatedBrandTitle className="relative z-10 text-center" />
-          <PerspectiveImage scrollYProgress={heroProgress} src={BOXER_SRC} className="relative z-10 w-full max-w-2xl" />
+          <PerspectiveImage scrollYProgress={heroProgress} src={BOXER_SRC} className="relative z-10 w-full max-w-4xl" />
         </div>
       </div>
 
@@ -72,21 +97,33 @@ export default function Landing() {
           waves/tilt/tall track. */}
       <div className="flex flex-col items-center gap-6 px-4 pb-10 pt-10 md:hidden">
         <AnimatedBrandTitle className="text-center" />
-        <img src={BOXER_SRC} alt="" className="w-full max-w-sm select-none" draggable={false} />
+        <img src={BOXER_SRC} alt="" className="w-full max-w-sm select-none opacity-70" draggable={false} />
       </div>
 
-      {/* Metrics + reviews — desktop: reviews flank the marquee */}
-      <div className="hidden md:grid md:grid-cols-[280px_minmax(0,1fr)_280px] md:items-center md:gap-6 md:px-8 md:py-16">
-        <StampedReview {...REVIEWS[0]} />
+      {/* Metrics + reviews — desktop: 3 reviews stacked on each side, flanking the marquee */}
+      <div className="hidden md:grid md:grid-cols-[260px_minmax(0,1fr)_260px] md:items-center md:gap-6 md:px-8 md:py-16">
+        <div className="flex flex-col gap-4">
+          {REVIEWS_LEFT.map((review) => (
+            <StampedReview key={review.name} {...review} />
+          ))}
+        </div>
         <MetricsMarquee />
-        <StampedReview {...REVIEWS[1]} />
+        <div className="flex flex-col gap-4">
+          {REVIEWS_RIGHT.map((review) => (
+            <StampedReview key={review.name} {...review} />
+          ))}
+        </div>
       </div>
 
       {/* Metrics + reviews — mobile: stacked, static grid, no drift */}
-      <div className="flex flex-col gap-6 px-4 py-12 md:hidden">
-        <StampedReview {...REVIEWS[0]} />
+      <div className="flex flex-col gap-4 px-4 py-12 md:hidden">
+        {REVIEWS_LEFT.map((review) => (
+          <StampedReview key={review.name} {...review} />
+        ))}
         <MetricsGridStatic />
-        <StampedReview {...REVIEWS[1]} />
+        {REVIEWS_RIGHT.map((review) => (
+          <StampedReview key={review.name} {...review} />
+        ))}
       </div>
 
       {/* Closing CTA */}

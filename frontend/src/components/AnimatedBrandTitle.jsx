@@ -37,7 +37,7 @@ export default function AnimatedBrandTitle({ className = '' }) {
       initial="hidden"
       whileInView="visible"
       viewport={{ once: true, amount: 0.6 }}
-      className={`font-rajdhani text-5xl font-bold uppercase tracking-wide text-white md:text-7xl ${className}`}
+      className={`font-rajdhani text-5xl font-bold tracking-wide text-white md:text-7xl ${className}`}
     >
       <motion.span variants={ACCOUNT} className="inline-block">
         account

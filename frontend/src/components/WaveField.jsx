@@ -66,8 +66,15 @@ function Wave({ config, scrollYProgress, index }) {
  * independent useScroll calls against slightly different refs would drift.
  */
 export default function WaveField({ scrollYProgress, className = '' }) {
+  // Confined to the lower band of the hero (not a full inset-0) so the
+  // waves trace behind/around the boxer image but never cross through the
+  // title, which now lives up near the top of the sticky hero instead of
+  // dead center — see Landing.jsx.
   return (
-    <div className={`pointer-events-none absolute inset-0 overflow-hidden ${className}`} aria-hidden="true">
+    <div
+      className={`pointer-events-none absolute inset-x-0 bottom-0 h-[65%] overflow-hidden ${className}`}
+      aria-hidden="true"
+    >
       <svg viewBox={`0 0 ${VIEW_W} ${VIEW_H}`} preserveAspectRatio="none" className="h-full w-full">
         {WAVES.map((config, index) => (
           <Wave key={index} config={config} scrollYProgress={scrollYProgress} index={index} />

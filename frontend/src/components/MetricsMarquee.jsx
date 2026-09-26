@@ -33,11 +33,15 @@ const FORM_TREND = [62, 68, 71, 75, 74, 79, 83].map((score, i) => ({
   started_at: `2026-0${(i % 9) + 1}-01T00:00:00Z`,
 }))
 
-function Panel({ glass = true, children }) {
+function Panel({ children }) {
+  // Every panel gets the same liquid-glass rectangle, including the gauge
+  // components that already carry their own compact glass tile internally
+  // — a bit of glass-in-glass, but it's what makes all 6 read as one
+  // consistent grid instead of the gauges looking smaller/bare.
   return (
     <div
       style={{ width: PANEL_PX, height: PANEL_PX }}
-      className={`flex shrink-0 items-center justify-center ${glass ? 'liquid-glass rounded-3xl p-4' : ''}`}
+      className="liquid-glass flex shrink-0 items-center justify-center rounded-3xl p-4"
     >
       {children}
     </div>
@@ -51,16 +55,14 @@ function Row({ items, x }) {
   return (
     <motion.div className="flex gap-6" style={{ x, width: SET_WIDTH * 2 }}>
       {[...items, ...items].map((item, i) => (
-        <Panel key={i} glass={item.glass}>
-          {item.content}
-        </Panel>
+        <Panel key={i}>{item.content}</Panel>
       ))}
     </motion.div>
   )
 }
 
 const TOP_ROW = [
-  { glass: false, content: <HeartRateGauge heartRateBpm={HEART_RATE_BPM} /> },
+  { content: <HeartRateGauge heartRateBpm={HEART_RATE_BPM} /> },
   {
     content: (
       <div className="flex h-full w-full flex-col items-center justify-center">
@@ -81,7 +83,7 @@ const TOP_ROW = [
 ]
 
 const BOTTOM_ROW = [
-  { glass: false, content: <GaugeRing value={REP_GOAL_PCT} label="Rep goal" sublabel="18 / 25 reps" color="#E65659" /> },
+  { content: <GaugeRing value={REP_GOAL_PCT} label="Rep goal" sublabel="18 / 25 reps" color="#E65659" /> },
   {
     content: (
       <div className="flex h-full w-full flex-col items-center justify-center">
@@ -120,7 +122,7 @@ export function MetricsGridStatic() {
           // letting each cell size to its own content keeps every panel
           // fully visible, at the cost of the row heights no longer
           // matching exactly.
-          className={`flex min-h-[180px] items-center justify-center ${item.glass === false ? '' : 'liquid-glass rounded-3xl p-4'}`}
+          className="liquid-glass flex min-h-[180px] items-center justify-center rounded-3xl p-4"
         >
           {item.content}
         </div>
@@ -132,9 +134,10 @@ export function MetricsGridStatic() {
 /**
  * The landing page's metrics preview: 3x2 liquid-glass panels of the app's
  * real HUD/dashboard widgets (all placeholder data — see the constants
- * above), reused as-is rather than rebuilt (HeartRateGauge.jsx and
- * GaugeRing.jsx already carry their own glass tile, so their Panel skips
- * adding a second one; the rest are bare components that get Panel's).
+ * above), reused as-is rather than rebuilt. Every panel — including
+ * HeartRateGauge/GaugeRing, which already carry their own compact glass
+ * tile — gets wrapped in the same fixed-size Panel rectangle, so all 6 read
+ * as one uniform grid rather than the gauges looking smaller/bare.
  *
  * The top and bottom rows drift in opposite directions as the page
  * scrolls — this is a scroll-tied *drift*, not a self-looping marquee: it

@@ -61,12 +61,17 @@ export default function App() {
   // to it, not `window`. See useAppScrollContainer.js for why this has to
   // be a Context carrying this exact ref object, not a lookup done later.
   const mainRef = useRef(null)
+  // The landing page draws its own solid black backdrop (waves etc. need a
+  // true black stage, not the glowy ambient one) — so the header/nav that
+  // sits above <main> shouldn't have the ambient glows behind it there
+  // either, or the top bar would visibly mismatch the page below it.
+  const isLanding = location.pathname === '/'
 
   return (
-    <div className="relative flex h-screen flex-col overflow-hidden bg-[#07060d] text-slate-100">
+    <div className={`relative flex h-screen flex-col overflow-hidden text-slate-100 ${isLanding ? 'bg-black' : 'bg-[#07060d]'}`}>
+      {!immersive && !isLanding && <AmbientBackground stream={camera.stream} vivid={location.pathname === '/dashboard'} />}
       {!immersive && (
         <>
-          <AmbientBackground stream={camera.stream} vivid={location.pathname === '/dashboard'} />
           <header className="relative z-10 flex flex-wrap items-center justify-between gap-3 p-4 md:flex-nowrap md:gap-4 md:px-8 md:pt-6">
             <Link
               to="/"

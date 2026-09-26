@@ -26,8 +26,8 @@ export default function PerspectiveImage({ scrollYProgress, src, alt = '', class
       <motion.img
         src={src}
         alt={alt}
-        style={{ rotateY, transformStyle: 'preserve-3d' }}
-        className="mx-auto h-auto w-full max-w-2xl origin-center select-none"
+        style={{ rotateY, opacity: 0.7, transformStyle: 'preserve-3d' }}
+        className="mx-auto h-auto w-full origin-center select-none"
         draggable={false}
       />
     </div>
