@@ -29,4 +29,8 @@ def create_app(config_object: type = Config) -> Flask:
     app.register_blueprint(vitals_bp, url_prefix="/api/vitals")
     app.register_blueprint(pose_bp, url_prefix="/api/pose")
 
+    from .cli import register_cli
+
+    register_cli(app)
+
     return app

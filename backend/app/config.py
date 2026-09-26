@@ -1,11 +1,17 @@
 import os
 
 
+def _database_url() -> str:
+    url = os.getenv("DATABASE_URL", "postgresql://hth3:hth3dev@localhost:5432/hth3_dev")
+    # Tiger Cloud hands out postgres:// URLs; SQLAlchemy only accepts postgresql://.
+    if url.startswith("postgres://"):
+        url = "postgresql://" + url[len("postgres://"):]
+    return url
+
+
 class Config:
     SECRET_KEY = os.getenv("SECRET_KEY", "dev")
-    SQLALCHEMY_DATABASE_URI = os.getenv(
-        "DATABASE_URL", "postgresql://hth3:hth3dev@localhost:5432/hth3_dev"
-    )
+    SQLALCHEMY_DATABASE_URI = _database_url()
     SQLALCHEMY_TRACK_MODIFICATIONS = False
 
     AUTH0_DOMAIN = os.getenv("AUTH0_DOMAIN", "")
