@@ -8,12 +8,7 @@ import StartWorkoutDock from '../components/StartWorkoutDock.jsx'
 import ZoneBar from '../components/ZoneBar.jsx'
 import { useWorkoutSummary } from '../hooks/useWorkoutSummary.js'
 import { EXERCISE_MUSCLE_WEIGHTS } from '../lib/muscleMap.js'
-
-// Validated against the dark glass surface (dataviz palette check). Rose is
-// everything heart-rate driven (heart rate, effort — echoing the HUD's
-// rep-goal ring); teal is everything movement driven (reps, form, quality).
-const HEART_COLOR = '#f43f5e'
-const MOVEMENT_COLOR = '#10a898'
+import { HEART_COLOR, MOVEMENT_COLOR, effortRating, formRating } from '../lib/scores.js'
 
 function prettify(name) {
   return name
@@ -24,22 +19,6 @@ function prettify(name) {
 
 function formatNumber(n) {
   return n == null ? '—' : n.toLocaleString()
-}
-
-function formRating(score) {
-  if (score == null) return null
-  if (score >= 85) return 'Excellent'
-  if (score >= 70) return 'Good'
-  if (score >= 50) return 'Fair'
-  return 'Needs work'
-}
-
-function effortRating(score) {
-  if (score == null) return null
-  if (score >= 80) return 'All out'
-  if (score >= 60) return 'Hard'
-  if (score >= 30) return 'Moderate'
-  return 'Light'
 }
 
 /**

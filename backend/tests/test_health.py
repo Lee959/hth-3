@@ -19,7 +19,7 @@ def test_health_check():
     assert resp.get_json() == {"status": "ok", "database": "ok"}
 
 
-def test_health_check_reports_unreachable_database(monkeypatch):
+def test_health_check_reports_unreachable_database(monkeypatch, log_dir):
     app = create_app(TestConfig)
 
     def unreachable(*args, **kwargs):
@@ -30,3 +30,4 @@ def test_health_check_reports_unreachable_database(monkeypatch):
         resp = app.test_client().get("/api/health")
     assert resp.status_code == 503
     assert resp.get_json()["database"] == "unreachable"
+    assert "ERROR Health check: database unreachable: No route to host" in (log_dir / "database.log").read_text()

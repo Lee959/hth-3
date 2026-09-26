@@ -4,7 +4,8 @@ from datetime import datetime, timezone
 import pytest
 
 from app.extensions import db
-from app.models import User, WorkoutSession
+from app.models import ExerciseSet, RepEvent, User, VitalsReading, WorkoutSession
+from app.services import effort
 
 
 def _start(client, when="2026-09-26T18:00:00Z"):
@@ -30,6 +31,7 @@ def test_other_users_workouts_are_404(client):
     assert client.post(f"/api/workouts/{sid}/end").status_code == 404
     assert _log_set(client, sid).status_code == 404
     assert client.get(f"/api/vitals/{sid}").status_code == 404
+    assert client.delete(f"/api/workouts/{sid}").status_code == 404
     db.session.expire_all()
     assert db.session.get(WorkoutSession, sid).status == "active"
 
@@ -62,6 +64,78 @@ def test_history_and_summary_skip_workouts_without_sets(client):
     assert summary["total_workouts"] == 1
     assert summary["total_reps"] == 10
     assert summary["active_minutes"] == 30
+
+
+def _add_heart_rate(session_id, *readings):
+    """Stores (ISO time, bpm) readings directly: SQLite can't autoincrement
+    the hypertable's composite key, so each gets an explicit id."""
+    for time, bpm in readings:
+        reading_id = (db.session.query(db.func.max(VitalsReading.id)).scalar() or 0) + 1
+        db.session.add(
+            VitalsReading(
+                id=reading_id,
+                session_id=session_id,
+                recorded_at=datetime.fromisoformat(time),
+                heart_rate_bpm=bpm,
+                source="rppg",
+            )
+        )
+    db.session.commit()
+
+
+def test_workout_detail_includes_its_effort_score(client):
+    sid = _start(client, "2026-09-26T18:00:00Z")
+    _log_set(client, sid)
+    client.post(f"/api/workouts/{sid}/end", json={"ended_at": "2026-09-26T18:20:00Z"})
+    # 150 bpm is 79% of the default 190 max: zone 3, for 20 minutes.
+    _add_heart_rate(
+        sid,
+        ("2026-09-26T18:00:00+00:00", 150),
+        ("2026-09-26T18:10:00+00:00", 150),
+        ("2026-09-26T18:20:00+00:00", 100),
+    )
+
+    detail = client.get(f"/api/workouts/{sid}").get_json()
+    assert detail["effort"] == {
+        "score": effort.effort_score([0, 0, 20, 0, 0], 10),
+        "zone_minutes": [0, 0, 20.0, 0, 0],
+        "has_heart_rate": True,
+        "max_heart_rate": 190,
+    }
+    # The home page summary scores the same workout the same way.
+    summary = client.get("/api/workouts/summary").get_json()
+    assert summary["effort"]["latest"]["score"] == detail["effort"]["score"]
+
+
+def test_deleting_a_workout_removes_it_and_everything_in_it(client):
+    kept = _start(client, "2026-09-25T18:00:00Z")
+    _log_set(client, kept)
+    client.post(f"/api/workouts/{kept}/end", json={"ended_at": "2026-09-25T18:30:00Z"})
+
+    sid = _start(client, "2026-09-26T18:00:00Z")
+    set_id = _log_set(client, sid).get_json()["id"]
+    client.post(f"/api/workouts/{sid}/end", json={"ended_at": "2026-09-26T18:30:00Z"})
+    _add_heart_rate(sid, ("2026-09-26T18:05:00+00:00", 120))
+    db.session.add(
+        RepEvent(
+            id=1,
+            session_id=sid,
+            set_id=set_id,
+            exercise_name="squat",
+            rep_number=1,
+            recorded_at=datetime(2026, 9, 26, 18, 5, tzinfo=timezone.utc),
+        )
+    )
+    db.session.commit()
+
+    assert client.delete(f"/api/workouts/{sid}").status_code == 204
+
+    assert client.get(f"/api/workouts/{sid}").status_code == 404
+    assert client.delete(f"/api/workouts/{sid}").status_code == 404
+    assert [s["id"] for s in client.get("/api/workouts/").get_json()] == [kept]
+    for model in (ExerciseSet, RepEvent, VitalsReading):
+        assert model.query.filter_by(session_id=sid).count() == 0
+    assert ExerciseSet.query.filter_by(session_id=kept).count() == 1
 
 
 @pytest.mark.parametrize(

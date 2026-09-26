@@ -28,6 +28,14 @@ def create_all_tables():
             col.autoincrement = True
 
 
+@pytest.fixture(autouse=True)
+def log_dir(tmp_path, monkeypatch):
+    """Every test's database.log goes to its own temp folder, never backend/logs."""
+    path = tmp_path / "logs"
+    monkeypatch.setattr(Config, "LOG_DIR", str(path))
+    return path
+
+
 @pytest.fixture
 def app():
     app = create_app(SqliteDevConfig)

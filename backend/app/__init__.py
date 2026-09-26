@@ -18,6 +18,10 @@ def create_app(config_object: type = Config) -> Flask:
     db.init_app(app)
     migrate.init_app(app, db)
 
+    from . import database_log
+
+    database_log.init_app(app)
+
     from . import models  # noqa: F401  registers models with SQLAlchemy metadata
 
     from .routes.health import health_bp
