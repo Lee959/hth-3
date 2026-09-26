@@ -10,6 +10,13 @@ export default {
           600: '#4f46e5',
           700: '#4338ca',
         },
+        // Landing page accent pink (waves, title's "ABLE", CTA's "now") —
+        // same red/pink family as MuscleHeatmap.jsx's HEATMAP_RED scale.
+        accent: {
+          300: '#F0999A',
+          400: '#E65659',
+          500: '#DF2629',
+        },
       },
       fontFamily: {
         // Anton: the big rep-count number. Rajdhani: everything else —

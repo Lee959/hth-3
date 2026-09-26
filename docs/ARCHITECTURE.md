@@ -123,6 +123,7 @@ src/
     useExerciseTracker.js                # landmarks -> exercise/reps/muscle LOAD scores/speed/totalRestMs
     useVitalsUpload.js                     # MediaRecorder chunks -> backend -> Presage
     useCameraPalette.js                       # ported from dev/metrics-board; feeds AmbientBackground.jsx
+    useAppScrollContainer.js                    # Context for the real scrolling element — see "Landing" below
   components/
     CameraFeed.jsx                 # <video> element, glass frame
     MuscleHeatmap.jsx                # @musclemap/react wrapper (LOAD color model), view="FRONT"|"BACK"
@@ -131,10 +132,20 @@ src/
     RepCounter.jsx                         # big number + exercise name
     WorkoutSummary.jsx                       # full-screen "Workout Saved" pop-out shown on End Workout
     AmbientBackground.jsx                      # ported from dev/metrics-board; WorkoutSummary's backdrop
+    StatTile.jsx                                 # bare number+label glass tile (Dashboard.jsx, Landing.jsx)
+    RequireAuth.jsx                                # route guard for /dashboard, /session, /history
+    AnimatedBrandTitle.jsx                           # Landing.jsx's hero title — see "Landing" below
+    WaveField.jsx                                      # Landing.jsx's scroll-drawn wave backdrop
+    PerspectiveImage.jsx                                 # Landing.jsx's scroll-tilted hero image
+    MetricsMarquee.jsx                                     # Landing.jsx's 3x2 metrics preview grid
+    StampedReview.jsx                                        # Landing.jsx's spring-in review cards
   pages/
-    Dashboard.jsx                       # landing page
-    WorkoutSession.jsx                    # wires camera + pose + tracker + sidebar together
-    History.jsx                             # placeholder for past sessions
+    Landing.jsx                         # marketing home ("/") — see "Landing" below
+    Register.jsx                          # "/register" — real Auth0 signup (screen_hint: 'signup')
+    SignIn.jsx                              # "/signin" — real Auth0 login
+    Dashboard.jsx                             # in-app summary, now at "/dashboard" (RequireAuth-guarded)
+    WorkoutSession.jsx                          # wires camera + pose + tracker + sidebar together
+    History.jsx                                   # placeholder for past sessions (RequireAuth-guarded)
   services/
     api.js                                   # axios instance + auth-token interceptor
 ```
@@ -142,6 +153,82 @@ src/
 `useAuth()` always returns a valid shape (real Auth0 state if configured,
 otherwise a safe fallback with `configured: false`), so components never
 need to special-case "Auth0 isn't set up yet" beyond checking that flag.
+
+## Landing (`Landing.jsx`)
+
+The marketing home page ("/" — sits under App.jsx's normal shared header,
+no page-specific navbar). Black background, heavy on framer-motion
+scroll-linked animation, with a hard rule that shows up throughout: **every
+`useScroll()` call needs `container: useAppScrollContainer()`.**
+App.jsx's shell is `h-screen overflow-hidden` with `<main>` as its own
+`overflow-y-auto` region — `<main>`, not `window`, is what actually
+scrolls, and framer-motion's `useScroll` defaults to tracking `window`.
+Omit `container` and every scroll-linked value silently freezes at its
+initial value; nothing throws, so this is easy to miss (it takes reading
+each animated element's live style values to notice nothing is updating).
+`useAppScrollContainer.js` is a Context, not a `document.querySelector('main')`
+lookup — App.jsx creates one `mainRef`, attaches it to its own `<main>`,
+and provides that same ref object down; a lookup done during a later
+render can run before `<main>` exists yet, and since a ref's `.current`
+changing later doesn't re-trigger effects that already ran, a lookup that
+missed once would stay broken for the life of the component. Reading the
+literal same ref object App.jsx uses sidesteps that, because React commits
+a parent's DOM refs before any descendant's effects run.
+
+Two parallel layouts, split by the `md:` breakpoint (`hidden md:block` /
+`md:hidden`) rather than one responsive tree — the desktop version needs
+tall scroll "tracks" (multiple viewport-heights, with pinned `sticky`
+content inside) purely to give the scroll-linked animations room to play
+out, which doesn't fit a phone's scroll budget or motion tolerance:
+
+- **Hero.** `WaveField.jsx` (5 pink sine-wave `<path>`s, traced on via
+  `pathLength` and erased again as you scroll, each with a brief motion
+  blur — via a `filter: blur()` motion template — on the way in only),
+  `AnimatedBrandTitle.jsx` ("account" slides in, "ABLE" flies in and
+  slams into place with an under-damped spring "overshoot", then an
+  underline draws in — a one-shot `whileInView` entrance, not tied
+  continuously to scroll position like the other two), and
+  `PerspectiveImage.jsx` (the hero image tilts on `rotateY` as you scroll;
+  **the sign matters and isn't obvious** — a *positive* `rotateY` angle
+  actually rotates the LEFT edge toward the viewer/bigger and the RIGHT
+  edge away/smaller, the opposite of "left recedes, right comes forward";
+  get the direction right by working out where each edge's `z` lands
+  under the rotation matrix, not by assuming). WaveField and
+  PerspectiveImage share one `scrollYProgress` (computed once in
+  Landing.jsx, passed down as a prop) rather than each running its own
+  `useScroll`, so they can't drift out of sync with each other.
+- **Metrics + reviews.** `MetricsMarquee.jsx`: a 3x2 grid of the app's
+  real HUD/dashboard widgets at placeholder data — `HeartRateGauge.jsx`
+  and `GaugeRing.jsx` reused as-is (they already carry their own glass
+  tile), `HeartRateChart.jsx`, `ScoreRing.jsx` + `Sparkline.jsx`, and the
+  newly-extracted `StatTile.jsx` (was a local function in `Dashboard.jsx`;
+  pulled out so this page could reuse the exact same tile). The top and
+  bottom rows drift in *opposite* horizontal directions as the page
+  scrolls (each row rendered twice back-to-back so translating by exactly
+  one set's width loops seamlessly) — a scroll-tied drift, not a
+  self-playing marquee; it only moves while you're scrolling through this
+  section. `StampedReview.jsx` cards flank it left/right, "stamped" in via
+  a spring (oversized + rotated → settles to normal size/angle) — the
+  brief called this "the same fashion as the title," which for a card
+  without a second word to underline reads as this spring-driven drop
+  rather than literally reusing the slide-then-underline sequence.
+- **Mobile fallback**, per component: `WaveField`/`PerspectiveImage` are
+  simply absent (flat static image, no tall track); `MetricsMarquee`
+  exports `MetricsGridStatic` — the same 6 panels, un-duplicated, as a
+  plain 2-column grid with no scroll track or drift (not `aspect-square`:
+  the chart panels are taller than the stat/gauge ones, and forcing a
+  square clipped them — `min-h-[180px]` lets each cell size to its own
+  content instead, at the cost of rows not lining up exactly even).
+  `AnimatedBrandTitle`'s entrance still runs on mobile (a `whileInView`
+  trigger, not scroll-linked, works the same everywhere).
+- **Closing CTA**, same on both breakpoints: "Discover the best workout
+  companion **now**" (the `now` in `accent-400`, `group`/`group-hover` on
+  the enclosing `<Link to="/register">` driving the pop/glow/underline on
+  hover), revealed via a one-shot `whileInView` slide-up.
+
+`accent` (`tailwind.config.js` — `300` `#F0999A`, `400` `#E65659`, `500`
+`#DF2629`) is the wave/title/CTA pink; same values as
+`MuscleHeatmap.jsx`'s `HEATMAP_RED` scale, not a new brand color.
 
 ## Data model
 

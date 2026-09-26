@@ -1,9 +1,11 @@
 import { Link, NavLink, Route, Routes, useLocation } from 'react-router-dom'
+import { useRef } from 'react'
 
 import { useAuth } from './auth/AuthContext.jsx'
 import AmbientBackground from './components/AmbientBackground.jsx'
 import RequireAuth from './components/RequireAuth.jsx'
 import { useCameraBackdrop } from './hooks/useCameraBackdrop.js'
+import { ScrollContainerContext } from './hooks/useAppScrollContainer.js'
 import Dashboard from './pages/Dashboard.jsx'
 import History from './pages/History.jsx'
 import Landing from './pages/Landing.jsx'
@@ -54,12 +56,22 @@ export default function App() {
   const immersive = location.pathname === '/session'
   const camera = useCameraBackdrop({ active: !immersive })
   const cameraProblem = camera.enabled && (camera.status === 'blocked' || camera.status === 'unavailable')
+  // <main> below is the app's real scrolling element (this shell is
+  // overflow-hidden) — Landing.jsx's scroll-linked animations need a ref
+  // to it, not `window`. See useAppScrollContainer.js for why this has to
+  // be a Context carrying this exact ref object, not a lookup done later.
+  const mainRef = useRef(null)
+  // The landing page draws its own solid black backdrop (waves etc. need a
+  // true black stage, not the glowy ambient one) — so the header/nav that
+  // sits above <main> shouldn't have the ambient glows behind it there
+  // either, or the top bar would visibly mismatch the page below it.
+  const isLanding = location.pathname === '/'
 
   return (
-    <div className="relative flex h-screen flex-col overflow-hidden bg-[#07060d] text-slate-100">
+    <div className={`relative flex h-screen flex-col overflow-hidden text-slate-100 ${isLanding ? 'bg-black' : 'bg-[#07060d]'}`}>
+      {!immersive && !isLanding && <AmbientBackground stream={camera.stream} vivid={location.pathname === '/dashboard'} />}
       {!immersive && (
         <>
-          <AmbientBackground stream={camera.stream} vivid={location.pathname === '/dashboard'} />
           <header className="relative z-10 flex flex-wrap items-center justify-between gap-3 p-4 md:flex-nowrap md:gap-4 md:px-8 md:pt-6">
             <Link
               to="/"
@@ -140,36 +152,38 @@ export default function App() {
         </>
       )}
 
-      <main className="relative z-10 min-h-0 flex-1 overflow-y-auto">
-        <Routes>
-          <Route path="/" element={<Landing />} />
-          <Route path="/register" element={<Register />} />
-          <Route path="/signin" element={<SignIn />} />
-          <Route
-            path="/dashboard"
-            element={
-              <RequireAuth>
-                <Dashboard />
-              </RequireAuth>
-            }
-          />
-          <Route
-            path="/session"
-            element={
-              <RequireAuth>
-                <WorkoutSession />
-              </RequireAuth>
-            }
-          />
-          <Route
-            path="/history"
-            element={
-              <RequireAuth>
-                <History />
-              </RequireAuth>
-            }
-          />
-        </Routes>
+      <main ref={mainRef} className="relative z-10 min-h-0 flex-1 overflow-y-auto">
+        <ScrollContainerContext.Provider value={mainRef}>
+          <Routes>
+            <Route path="/" element={<Landing />} />
+            <Route path="/register" element={<Register />} />
+            <Route path="/signin" element={<SignIn />} />
+            <Route
+              path="/dashboard"
+              element={
+                <RequireAuth>
+                  <Dashboard />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/session"
+              element={
+                <RequireAuth>
+                  <WorkoutSession />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/history"
+              element={
+                <RequireAuth>
+                  <History />
+                </RequireAuth>
+              }
+            />
+          </Routes>
+        </ScrollContainerContext.Provider>
       </main>
     </div>
   )
