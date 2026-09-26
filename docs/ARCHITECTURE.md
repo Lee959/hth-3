@@ -122,6 +122,7 @@ src/
     usePoseDetection.js                # MediaPipe PoseLandmarker on the shared stream
     useExerciseTracker.js                # landmarks -> exercise/reps/muscle LOAD scores/speed/totalRestMs
     useVitalsUpload.js                     # MediaRecorder chunks -> backend -> Presage
+    useCameraPalette.js                       # ported from dev/metrics-board; feeds AmbientBackground.jsx
   components/
     CameraFeed.jsx                 # <video> element, glass frame
     MuscleHeatmap.jsx                # @musclemap/react wrapper (LOAD color model), view="FRONT"|"BACK"
@@ -129,6 +130,7 @@ src/
     MetricsSidebar.jsx                   # left sidebar: gauges, stat pills, quick actions
     RepCounter.jsx                         # big number + exercise name
     WorkoutSummary.jsx                       # full-screen "Workout Saved" pop-out shown on End Workout
+    AmbientBackground.jsx                      # ported from dev/metrics-board; WorkoutSummary's backdrop
   pages/
     Dashboard.jsx                       # landing page
     WorkoutSession.jsx                    # wires camera + pose + tracker + sidebar together
@@ -256,14 +258,34 @@ everything the session page shows, entirely client-side:
 Shown as a full-screen pop-out over the session HUD (`absolute inset-0
 z-30`) when the user hits End Workout — visual-only for now, per explicit
 scope: no backend persistence, just a clearly-marked stub (see below).
-**Background and stat-tile style deliberately match `MetricsSidebar.jsx`
-(the live HUD's "metrics board"), not the app's purple page gradient:**
-`bg-black` (same as `WorkoutSession.jsx`'s own root, which the metrics
-board sits on) rather than `from-indigo-950 via-violet-900 to-fuchsia-900`,
-and `WorkoutSummary.jsx`'s own `StatTile` mirrors `MetricsSidebar.jsx`'s —
-label on top (`text-xs font-bold uppercase`), value as a plain `text-xl
-font-semibold` (not `font-anton`, which stays reserved for `RepCounter.jsx`
-and `RestTimer.jsx`'s big scoreboard numbers), light sublabel/unit below.
+
+**Background and tile style are ported from `dev/metrics-board`'s Dashboard
+redesign** (a separate branch's "metrics board" — not this branch's own
+`MetricsSidebar.jsx`, an earlier, since-superseded pass at matching that),
+rather than either this app's purple page gradient or the immersive
+session's flat black:
+
+- **`AmbientBackground.jsx`** (copied over, along with its
+  `useCameraPalette.js` hook, unmodified) — three blurred, slowly drifting
+  color glows over a near-black `bg-[#07060d]`, colored from the live
+  camera feed if `stream` is passed (still-open from the session even after
+  End Workout, since only pose detection paused, not the camera itself) or
+  a fixed fallback palette otherwise. Purely decorative (`aria-hidden`),
+  rendered once behind the summary's content (`relative z-10`).
+- **`.liquid-glass`** (new utility class in `styles/index.css`, also ported
+  unmodified) — a richer glass surface than `GlassTile.jsx`'s flat
+  `bg-white/10`: a diagonal sheen gradient, saturated blur so the ambient
+  glows tint through it, and an inner highlight so tiles read as curved,
+  light-catching slabs. `WorkoutSummary.jsx`'s title, stat tiles, the
+  load-legend pill, the exercises table, and the Home/New Workout buttons
+  all use it (`rounded-3xl` for boxy tiles, `rounded-full` for pills) —
+  `MuscleHeatmap.jsx` keeps its own `GlassTile`, since that component is
+  shared with the live HUD and wasn't in scope for this pass.
+- **Stat tile numbers are `font-rajdhani font-bold` (matching
+  `dev/metrics-board`'s own `StatTile`), not `font-anton`** — Anton stays
+  reserved for `RepCounter.jsx`/`RestTimer.jsx`'s live scoreboard numbers
+  only, so a "big Anton number" always means something happening *right
+  now*, never a static summary value.
 
 - **Snapshot, not live state.** `WorkoutSession.jsx`'s `handleEndSession`
   calls `buildWorkoutSummary()` (`lib/workoutSummary.js`) *before* calling

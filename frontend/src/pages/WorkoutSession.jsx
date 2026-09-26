@@ -176,7 +176,7 @@ export default function WorkoutSession() {
         />
       </div>
 
-      {summary && <WorkoutSummary summary={summary} onDone={handleNewWorkout} />}
+      {summary && <WorkoutSummary summary={summary} onDone={handleNewWorkout} stream={stream} />}
     </div>
   )
 }
