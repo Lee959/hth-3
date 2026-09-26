@@ -12,6 +12,7 @@ import { useAuth } from '../auth/AuthContext.jsx'
 import { useCamera } from '../hooks/useCamera.js'
 import { useExerciseTracker } from '../hooks/useExerciseTracker.js'
 import { usePoseDetection } from '../hooks/usePoseDetection.js'
+import { useSetLogger } from '../hooks/useSetLogger.js'
 import { useVitalsUpload } from '../hooks/useVitalsUpload.js'
 import { api, attachAuthToken } from '../services/api.js'
 
@@ -38,8 +39,9 @@ export default function WorkoutSession() {
   const { videoRef, stream, ready } = useCamera()
   const [paused, setPaused] = useState(false)
   const landmarks = usePoseDetection(videoRef, { running: ready && !paused })
-  const { exerciseName, reps, scores, speed, peakAcceleration, reset } = useExerciseTracker(landmarks)
+  const { exerciseName, reps, scores, speed, peakAcceleration, reset, drainReps } = useExerciseTracker(landmarks)
   const [sessionId, setSessionId] = useState(null)
+  const flushSets = useSetLogger({ sessionId, exerciseName, drainReps })
   const [vitals, setVitals] = useState([])
 
   useEffect(() => {
@@ -61,7 +63,15 @@ export default function WorkoutSession() {
     return () => clearInterval(interval)
   }, [sessionId])
 
+  // Both save the reps done so far before zeroing the counters, so a reset
+  // mid-workout never throws away logged work.
+  function handleReset() {
+    flushSets()
+    reset()
+  }
+
   function handleEndSession() {
+    flushSets()
     if (sessionId) api.post(`/workouts/${sessionId}/end`)
     reset()
     setPaused(true)
@@ -111,7 +121,7 @@ export default function WorkoutSession() {
           isPaused={paused}
           onTogglePause={() => setPaused((p) => !p)}
           onEndSession={handleEndSession}
-          onReset={reset}
+          onReset={handleReset}
         />
       </div>
     </div>

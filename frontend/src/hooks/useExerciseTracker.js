@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import { LANDMARKS, angleAt, ema, midpoint } from '../lib/poseMath.js'
 import { muscleWeightsFor } from '../lib/muscleMap.js'
 import { RepCounter } from '../lib/repCounter.js'
+import { repSeconds, scoreRep } from '../lib/repQuality.js'
 
 const ANGLE_WINDOW = 30 // ~1s of frames at 30fps
 const MIN_RANGE_DEG = 25 // ignore standing-still jitter
@@ -74,6 +75,12 @@ function freshCounters() {
  *
  * Speed/acceleration are in *relative* units (fraction of frame size per
  * second) — real signal, but not calibrated to real-world meters.
+ *
+ * Every completed rep is also scored for movement quality (range of
+ * motion, left/right symmetry, tempo -> form score; see lib/repQuality.js)
+ * from the extremes and side-to-side difference of the exercise's angle
+ * since the previous rep. Scored reps queue up until the caller collects
+ * them with `drainReps()` (useSetLogger.js saves them as sets).
  */
 export function useExerciseTracker(landmarks) {
   const kneeBuf = useRef([])
@@ -85,6 +92,10 @@ export function useExerciseTracker(landmarks) {
   const scores = useRef({})
   const motion = useRef({ lastPoint: null, lastTime: null, velocity: 0, accel: 0, peakAccel: 0 })
   const lastDecayTime = useRef(null)
+  // Angle extremes + left/right difference for the rep in progress.
+  const repWindow = useRef(null)
+  const lastRepAt = useRef({})
+  const completedReps = useRef([])
 
   const [state, setState] = useState({
     exerciseName: null,
@@ -104,6 +115,9 @@ export function useExerciseTracker(landmarks) {
     scores.current = {}
     motion.current = { lastPoint: null, lastTime: null, velocity: 0, accel: 0, peakAccel: 0 }
     lastDecayTime.current = null
+    repWindow.current = null
+    lastRepAt.current = {}
+    completedReps.current = []
     setState({ exerciseName: null, reps: 0, scores: {}, speed: 0, peakAcceleration: 0 })
   }
 
@@ -122,22 +136,30 @@ export function useExerciseTracker(landmarks) {
     }
     lastDecayTime.current = now
 
-    const knee =
-      (angleAt(landmarks, LANDMARKS.LEFT_HIP, LANDMARKS.LEFT_KNEE, LANDMARKS.LEFT_ANKLE) +
-        angleAt(landmarks, LANDMARKS.RIGHT_HIP, LANDMARKS.RIGHT_KNEE, LANDMARKS.RIGHT_ANKLE)) /
-      2
-    const elbow =
-      (angleAt(landmarks, LANDMARKS.LEFT_SHOULDER, LANDMARKS.LEFT_ELBOW, LANDMARKS.LEFT_WRIST) +
-        angleAt(landmarks, LANDMARKS.RIGHT_SHOULDER, LANDMARKS.RIGHT_ELBOW, LANDMARKS.RIGHT_WRIST)) /
-      2
-    const shoulder =
-      (angleAt(landmarks, LANDMARKS.LEFT_HIP, LANDMARKS.LEFT_SHOULDER, LANDMARKS.LEFT_ELBOW) +
-        angleAt(landmarks, LANDMARKS.RIGHT_HIP, LANDMARKS.RIGHT_SHOULDER, LANDMARKS.RIGHT_ELBOW)) /
-      2
-    const hipFlex =
-      (angleAt(landmarks, LANDMARKS.LEFT_KNEE, LANDMARKS.LEFT_HIP, LANDMARKS.LEFT_SHOULDER) +
-        angleAt(landmarks, LANDMARKS.RIGHT_KNEE, LANDMARKS.RIGHT_HIP, LANDMARKS.RIGHT_SHOULDER)) /
-      2
+    // Left and right kept separate (not just averaged) so each rep's
+    // left/right symmetry can be scored.
+    const sides = {
+      knee: [
+        angleAt(landmarks, LANDMARKS.LEFT_HIP, LANDMARKS.LEFT_KNEE, LANDMARKS.LEFT_ANKLE),
+        angleAt(landmarks, LANDMARKS.RIGHT_HIP, LANDMARKS.RIGHT_KNEE, LANDMARKS.RIGHT_ANKLE),
+      ],
+      elbow: [
+        angleAt(landmarks, LANDMARKS.LEFT_SHOULDER, LANDMARKS.LEFT_ELBOW, LANDMARKS.LEFT_WRIST),
+        angleAt(landmarks, LANDMARKS.RIGHT_SHOULDER, LANDMARKS.RIGHT_ELBOW, LANDMARKS.RIGHT_WRIST),
+      ],
+      shoulder: [
+        angleAt(landmarks, LANDMARKS.LEFT_HIP, LANDMARKS.LEFT_SHOULDER, LANDMARKS.LEFT_ELBOW),
+        angleAt(landmarks, LANDMARKS.RIGHT_HIP, LANDMARKS.RIGHT_SHOULDER, LANDMARKS.RIGHT_ELBOW),
+      ],
+      hipFlex: [
+        angleAt(landmarks, LANDMARKS.LEFT_KNEE, LANDMARKS.LEFT_HIP, LANDMARKS.LEFT_SHOULDER),
+        angleAt(landmarks, LANDMARKS.RIGHT_KNEE, LANDMARKS.RIGHT_HIP, LANDMARKS.RIGHT_SHOULDER),
+      ],
+    }
+    const knee = (sides.knee[0] + sides.knee[1]) / 2
+    const elbow = (sides.elbow[0] + sides.elbow[1]) / 2
+    const shoulder = (sides.shoulder[0] + sides.shoulder[1]) / 2
+    const hipFlex = (sides.hipFlex[0] + sides.hipFlex[1]) / 2
 
     pushBounded(kneeBuf.current, knee, ANGLE_WINDOW)
     pushBounded(elbowBuf.current, elbow, ANGLE_WINDOW)
@@ -148,10 +170,22 @@ export function useExerciseTracker(landmarks) {
     const hipMid = midpoint(landmarks, LANDMARKS.LEFT_HIP, LANDMARKS.RIGHT_HIP)
 
     const candidates = [
-      { name: 'squat', range: rangeOf(kneeBuf.current), angle: knee },
-      { name: 'elbow', range: rangeOf(elbowBuf.current), angle: elbow },
-      { name: 'jumping_jack', range: rangeOf(shoulderBuf.current), angle: shoulder },
-      { name: 'crunch', range: rangeOf(hipFlexBuf.current), angle: hipFlex },
+      { name: 'squat', range: rangeOf(kneeBuf.current), angle: knee, buf: kneeBuf.current, sides: sides.knee },
+      { name: 'elbow', range: rangeOf(elbowBuf.current), angle: elbow, buf: elbowBuf.current, sides: sides.elbow },
+      {
+        name: 'jumping_jack',
+        range: rangeOf(shoulderBuf.current),
+        angle: shoulder,
+        buf: shoulderBuf.current,
+        sides: sides.shoulder,
+      },
+      {
+        name: 'crunch',
+        range: rangeOf(hipFlexBuf.current),
+        angle: hipFlex,
+        buf: hipFlexBuf.current,
+        sides: sides.hipFlex,
+      },
     ]
     const best = candidates.reduce((a, b) => (b.range > a.range ? b : a))
 
@@ -179,10 +213,38 @@ export function useExerciseTracker(landmarks) {
 
     let reps = state.reps
     if (exerciseName && primaryAngle != null) {
+      // A new exercise starts a fresh window, seeded from the last ~1s of
+      // that joint's angles so the first rep's range isn't cut short by
+      // however long detection took to lock on.
+      if (repWindow.current?.exercise !== exerciseName) {
+        repWindow.current = {
+          exercise: exerciseName,
+          minAngle: Math.min(...best.buf),
+          maxAngle: Math.max(...best.buf),
+          diffSum: 0,
+          diffCount: 0,
+        }
+      }
+      const win = repWindow.current
+      win.minAngle = Math.min(win.minAngle, primaryAngle)
+      win.maxAngle = Math.max(win.maxAngle, primaryAngle)
+      win.diffSum += Math.abs(best.sides[0] - best.sides[1])
+      win.diffCount += 1
+
       const previousReps = counters.current[exerciseName].reps
       reps = counters.current[exerciseName].update(primaryAngle)
 
       if (reps > previousReps) {
+        const scored = scoreRep(exerciseName, {
+          minAngle: win.minAngle,
+          maxAngle: win.maxAngle,
+          sideDiffAvg: win.diffCount ? win.diffSum / win.diffCount : 0,
+          seconds: repSeconds(exerciseName, lastRepAt.current[exerciseName], now),
+        })
+        if (scored) completedReps.current.push(scored)
+        lastRepAt.current[exerciseName] = now
+        repWindow.current = { ...win, minAngle: primaryAngle, maxAngle: primaryAngle, diffSum: 0, diffCount: 0 }
+
         const weights = muscleWeightsFor(exerciseName)
         for (const [muscle, weight] of Object.entries(weights)) {
           const current = scores.current[muscle] ?? 0
@@ -224,5 +286,12 @@ export function useExerciseTracker(landmarks) {
     })
   }, [landmarks])
 
-  return { ...state, reset }
+  /** Hands over every rep scored since the last call, and forgets them. */
+  function drainReps() {
+    const reps = completedReps.current
+    completedReps.current = []
+    return reps
+  }
+
+  return { ...state, reset, drainReps }
 }
