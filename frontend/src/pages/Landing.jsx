@@ -11,6 +11,8 @@ import { useAppScrollContainer } from '../hooks/useAppScrollContainer.js'
 
 const BOXER_SRC = '/images/boxer-hero.svg'
 
+const HERO_SUBTITLE = 'Real-time form feedback and heart rate — powered by your camera, not a wearable.'
+
 // A dark diagonal blend of the app's three signature glow colors (rose,
 // violet, teal — see AmbientBackground.jsx's DEFAULT_GLOWS) instead of flat
 // black: still dark enough for the white title/pink waves to read clearly,
@@ -96,9 +98,9 @@ export default function Landing() {
     <div className={LANDING_BACKDROP}>
       {/* Hero — desktop */}
       <div ref={heroRef} className="relative hidden h-[220vh] md:block">
-        <div className="sticky top-0 flex h-screen flex-col items-center gap-10 overflow-hidden px-4 pt-20 md:pt-28">
+        <div className="sticky top-0 flex h-screen flex-col items-center gap-6 overflow-hidden px-4 pt-16 md:pt-12">
           <WaveField scrollYProgress={heroProgress} />
-          <AnimatedBrandTitle className="relative z-10 text-center" />
+          <AnimatedBrandTitle className="relative z-10 text-center" subtitle={HERO_SUBTITLE} />
           <PerspectiveImage scrollYProgress={heroProgress} src={BOXER_SRC} className="relative z-10 w-full max-w-4xl" />
         </div>
       </div>
@@ -107,7 +109,7 @@ export default function Landing() {
           not scroll-linked, so it works fine here too), flat image, no
           waves/tilt/tall track. */}
       <div className="flex flex-col items-center gap-6 px-4 pb-10 pt-10 md:hidden">
-        <AnimatedBrandTitle className="text-center" />
+        <AnimatedBrandTitle className="text-center" subtitle={HERO_SUBTITLE} />
         <img src={BOXER_SRC} alt="" className="w-full max-w-sm select-none opacity-70" draggable={false} />
       </div>
 
