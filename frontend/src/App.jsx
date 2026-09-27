@@ -2,6 +2,7 @@ import { Link, NavLink, Route, Routes, useLocation } from 'react-router-dom'
 import { useRef } from 'react'
 
 import { useAuth } from './auth/AuthContext.jsx'
+import { useLoginRedirect } from './auth/useLoginRedirect.js'
 import AmbientBackground from './components/AmbientBackground.jsx'
 import RequireAuth from './components/RequireAuth.jsx'
 import { useCameraBackdrop } from './hooks/useCameraBackdrop.js'
@@ -9,7 +10,6 @@ import { ScrollContainerContext } from './hooks/useAppScrollContainer.js'
 import Dashboard from './pages/Dashboard.jsx'
 import History from './pages/History.jsx'
 import Landing from './pages/Landing.jsx'
-import Register from './pages/Register.jsx'
 import SignIn from './pages/SignIn.jsx'
 import WorkoutSession from './pages/WorkoutSession.jsx'
 
@@ -46,9 +46,8 @@ function navLinkClass({ isActive }) {
 }
 
 export default function App() {
-  const { isAuthenticated, loginWithRedirect, logout, user, configured } = useAuth()
-  const auth0Domain = import.meta.env.VITE_AUTH0_DOMAIN
-  const canStartAuth = configured || Boolean(auth0Domain)
+  const { isAuthenticated, logout, user, configured } = useAuth()
+  const { startLogin, startSignup, canStartAuth } = useLoginRedirect()
   const location = useLocation()
   // The workout session is meant to be immersive — full-screen camera, no
   // chrome around it — so it's the one route that hides the top bar
@@ -61,14 +60,20 @@ export default function App() {
   // to it, not `window`. See useAppScrollContainer.js for why this has to
   // be a Context carrying this exact ref object, not a lookup done later.
   const mainRef = useRef(null)
-  // The landing page draws its own solid black backdrop (waves etc. need a
-  // true black stage, not the glowy ambient one) — so the header/nav that
-  // sits above <main> shouldn't have the ambient glows behind it there
-  // either, or the top bar would visibly mismatch the page below it.
+  // The landing page draws its own tri-color backdrop (see LANDING_BACKDROP
+  // in Landing.jsx) instead of the glowy ambient one — so the header/nav
+  // that sits above <main> shouldn't have the ambient glows behind it
+  // either, or the top bar would visibly mismatch the page below it. This
+  // shell never scrolls (h-screen overflow-hidden), so painting the same
+  // gradient here needs no bg-fixed to stay put behind the header.
   const isLanding = location.pathname === '/'
 
   return (
-    <div className={`relative flex h-screen flex-col overflow-hidden text-slate-100 ${isLanding ? 'bg-black' : 'bg-[#07060d]'}`}>
+    <div
+      className={`relative flex h-screen flex-col overflow-hidden text-slate-100 ${
+        isLanding ? 'bg-[linear-gradient(160deg,#2b0a16_0%,#1a1030_50%,#04211d_100%)]' : 'bg-[#07060d]'
+      }`}
+    >
       {!immersive && !isLanding && <AmbientBackground stream={camera.stream} vivid={location.pathname === '/dashboard'} />}
       {!immersive && (
         <>
@@ -114,29 +119,30 @@ export default function App() {
                 </button>
               ) : (
                 <>
-                  {/* Register.jsx's own submit is what actually calls
-                      loginWithRedirect with screen_hint: 'signup' — this is
-                      just the app-wide entry point to that page. */}
-                  <Link
-                    to="/register"
-                    className="whitespace-nowrap rounded-full px-3 py-1.5 text-white/70 transition hover:text-white"
+                  {/* Straight to Auth0's sign-up tab (useLoginRedirect) —
+                      no intermediate form page anymore. */}
+                  <button
+                    onClick={startSignup}
+                    disabled={!canStartAuth}
+                    title={canStartAuth ? undefined : 'Sign up needs Auth0 configured — see docs/SETUP.md'}
+                    className="whitespace-nowrap rounded-full px-3 py-1.5 text-white/70 transition hover:text-white disabled:cursor-not-allowed disabled:text-white/30"
                   >
                     Sign up
-                  </Link>
-                  <button
-                    onClick={async () => {
-                      if (configured) {
-                        await loginWithRedirect()
-                        return
-                      }
-                      if (auth0Domain) window.location.assign(`https://${auth0Domain}/u/login`)
-                    }}
-                    disabled={!canStartAuth}
-                    title={canStartAuth ? undefined : 'Log in needs Auth0 configured — see docs/SETUP.md'}
-                    className="whitespace-nowrap rounded-full bg-white px-4 py-1.5 text-slate-900 transition hover:bg-white/90 disabled:cursor-not-allowed disabled:bg-white/20 disabled:text-white/50"
-                  >
-                    Log in
                   </button>
+                  {/* The landing page's own closing CTA is the "log in"
+                      entry point there (straight to Auth0, see
+                      Landing.jsx) — this header button is redundant on
+                      that page specifically, so it's dropped there. */}
+                  {!isLanding && (
+                    <button
+                      onClick={startLogin}
+                      disabled={!canStartAuth}
+                      title={canStartAuth ? undefined : 'Log in needs Auth0 configured — see docs/SETUP.md'}
+                      className="whitespace-nowrap rounded-full bg-white px-4 py-1.5 text-slate-900 transition hover:bg-white/90 disabled:cursor-not-allowed disabled:bg-white/20 disabled:text-white/50"
+                    >
+                      Log in
+                    </button>
+                  )}
                 </>
               )}
             </nav>
@@ -156,7 +162,6 @@ export default function App() {
         <ScrollContainerContext.Provider value={mainRef}>
           <Routes>
             <Route path="/" element={<Landing />} />
-            <Route path="/register" element={<Register />} />
             <Route path="/signin" element={<SignIn />} />
             <Route
               path="/dashboard"

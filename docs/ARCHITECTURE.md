@@ -107,10 +107,11 @@ SQLite database and dummy Auth0 settings (`tests/test_health.py`).
 ```
 src/
   main.jsx                  # mounts <App/> inside BrowserRouter + AppAuthProvider
-  App.jsx                    # gradient background, glass nav, routes, login/logout button
+  App.jsx                    # tri-color landing backdrop, glass nav, routes, login/signup/logout
   auth/
     AuthContext.jsx           # useAuth() — safe no-op default if Auth0 isn't configured
     Auth0ProviderWithNavigate.jsx  # wraps Auth0Provider, bridges into AuthContext
+    useLoginRedirect.js        # startLogin()/startSignup() straight to Auth0 — see "Landing" below
   lib/
     poseMath.js                # landmark indices, angle-at-a-joint math, EMA smoothing
     repCounter.js                # generic angle-based rep state machine (up/down)
@@ -141,8 +142,7 @@ src/
     StampedReview.jsx                                        # Landing.jsx's spring-in review cards
   pages/
     Landing.jsx                         # marketing home ("/") — see "Landing" below
-    Register.jsx                          # "/register" — real Auth0 signup (screen_hint: 'signup')
-    SignIn.jsx                              # "/signin" — real Auth0 login
+    SignIn.jsx                            # "/signin" — real Auth0 login; "Create one" also goes straight to Auth0 signup
     Dashboard.jsx                             # in-app summary, now at "/dashboard" (RequireAuth-guarded)
     WorkoutSession.jsx                          # wires camera + pose + tracker + sidebar together
     History.jsx                                   # placeholder for past sessions (RequireAuth-guarded)
@@ -157,7 +157,9 @@ need to special-case "Auth0 isn't set up yet" beyond checking that flag.
 ## Landing (`Landing.jsx`)
 
 The marketing home page ("/" — sits under App.jsx's normal shared header,
-no page-specific navbar). Black background, heavy on framer-motion
+no page-specific navbar). Tri-color background (a dark rose/violet/teal
+gradient — `LANDING_BACKDROP` in Landing.jsx, echoing `AmbientBackground.jsx`'s
+`DEFAULT_GLOWS` palette — instead of flat black), heavy on framer-motion
 scroll-linked animation, with a hard rule that shows up throughout: **every
 `useScroll()` call needs `container: useAppScrollContainer()`.**
 App.jsx's shell is `h-screen overflow-hidden` with `<main>` as its own
@@ -175,6 +177,17 @@ missed once would stay broken for the life of the component. Reading the
 literal same ref object App.jsx uses sidesteps that, because React commits
 a parent's DOM refs before any descendant's effects run.
 
+`LANDING_BACKDROP`'s gradient is painted with `bg-fixed`, pinning it to the
+viewport rather than the element — this page's content is several
+viewport-heights tall (see the scroll tracks below), so without `bg-fixed`
+the gradient would stretch across that whole height and mostly show one
+solid color at a time instead of all three staying visible together.
+App.jsx paints the same gradient (no `bg-fixed` needed there — that shell
+is `h-screen overflow-hidden`, so it never scrolls) behind the header on
+this route, so the nav doesn't visibly mismatch the page below it; the
+non-landing routes get `AmbientBackground.jsx`'s camera-glow treatment
+instead (skipped here for the same reason).
+
 Two parallel layouts, split by the `md:` breakpoint (`hidden md:block` /
 `md:hidden`) rather than one responsive tree — the desktop version needs
 tall scroll "tracks" (multiple viewport-heights, with pinned `sticky`
@@ -183,35 +196,51 @@ out, which doesn't fit a phone's scroll budget or motion tolerance:
 
 - **Hero.** `WaveField.jsx` (5 pink sine-wave `<path>`s, traced on via
   `pathLength` and erased again as you scroll, each with a brief motion
-  blur — via a `filter: blur()` motion template — on the way in only),
+  blur — via a `filter: blur()` motion template — on the way in only).
+  Confined to the bottom ~65% of the hero (`inset-x-0 bottom-0 h-[65%]`,
+  not a full `inset-0`) with the title pushed up near the top
+  (`pt-20`/`pt-28` instead of centering) — both changes exist purely so
+  the wave lines never trace behind/through the title text.
   `AnimatedBrandTitle.jsx` ("account" slides in, "ABLE" flies in and
   slams into place with an under-damped spring "overshoot", then an
   underline draws in — a one-shot `whileInView` entrance, not tied
-  continuously to scroll position like the other two), and
-  `PerspectiveImage.jsx` (the hero image tilts on `rotateY` as you scroll;
-  **the sign matters and isn't obvious** — a *positive* `rotateY` angle
-  actually rotates the LEFT edge toward the viewer/bigger and the RIGHT
-  edge away/smaller, the opposite of "left recedes, right comes forward";
-  get the direction right by working out where each edge's `z` lands
-  under the rotation matrix, not by assuming). WaveField and
-  PerspectiveImage share one `scrollYProgress` (computed once in
-  Landing.jsx, passed down as a prop) rather than each running its own
-  `useScroll`, so they can't drift out of sync with each other.
+  continuously to scroll position like the other two) — no forced
+  `uppercase` on its wrapping `<h1>`; the literal `account`/`ABLE` case is
+  what should render, to match the header wordmark (an earlier pass had
+  `uppercase` there, which silently turned it into "ACCOUNTABLE"). And
+  `PerspectiveImage.jsx` (the hero image tilts on `rotateY` as you scroll,
+  at ~70% opacity and allowed to grow larger — no `max-w` cap on the `img`
+  itself, only on its wrapper — instead of full opacity capped at
+  `max-w-2xl`; **the rotation sign matters and isn't obvious** — a
+  *positive* `rotateY` angle actually rotates the LEFT edge toward the
+  viewer/bigger and the RIGHT edge away/smaller, the opposite of "left
+  recedes, right comes forward"; get the direction right by working out
+  where each edge's `z` lands under the rotation matrix, not by assuming).
+  WaveField and PerspectiveImage share one `scrollYProgress` (computed
+  once in Landing.jsx, passed down as a prop) rather than each running its
+  own `useScroll`, so they can't drift out of sync with each other.
 - **Metrics + reviews.** `MetricsMarquee.jsx`: a 3x2 grid of the app's
-  real HUD/dashboard widgets at placeholder data — `HeartRateGauge.jsx`
-  and `GaugeRing.jsx` reused as-is (they already carry their own glass
-  tile), `HeartRateChart.jsx`, `ScoreRing.jsx` + `Sparkline.jsx`, and the
-  newly-extracted `StatTile.jsx` (was a local function in `Dashboard.jsx`;
-  pulled out so this page could reuse the exact same tile). The top and
-  bottom rows drift in *opposite* horizontal directions as the page
-  scrolls (each row rendered twice back-to-back so translating by exactly
-  one set's width loops seamlessly) — a scroll-tied drift, not a
-  self-playing marquee; it only moves while you're scrolling through this
-  section. `StampedReview.jsx` cards flank it left/right, "stamped" in via
-  a spring (oversized + rotated → settles to normal size/angle) — the
-  brief called this "the same fashion as the title," which for a card
-  without a second word to underline reads as this spring-driven drop
-  rather than literally reusing the slide-then-underline sequence.
+  real HUD/dashboard widgets at placeholder data — `HeartRateGauge.jsx`,
+  `GaugeRing.jsx`, `HeartRateChart.jsx`, `ScoreRing.jsx` + `Sparkline.jsx`,
+  and the newly-extracted `StatTile.jsx` (was a local function in
+  `Dashboard.jsx`; pulled out so this page could reuse the exact same
+  tile). Every panel — including `HeartRateGauge`/`GaugeRing`, which
+  already carry their own compact glass tile internally — is wrapped in
+  the same fixed-size liquid-glass `Panel` rectangle, a bit of
+  glass-in-glass for those two, but it's what makes all 6 read as one
+  uniform grid instead of the gauges looking smaller/bare (an earlier pass
+  skipped the wrapper for just those two). The top and bottom rows drift
+  in *opposite* horizontal directions as the page scrolls (each row
+  rendered twice back-to-back so translating by exactly one set's width
+  loops seamlessly) — a scroll-tied drift, not a self-playing marquee; it
+  only moves while you're scrolling through this section. `StampedReview.jsx`
+  cards flank it left/right, 3 per side (`REVIEWS_LEFT`/`REVIEWS_RIGHT` in
+  Landing.jsx), "stamped" in via a spring (oversized → settles to normal
+  size, no rotation — an earlier pass also tilted them a few degrees, but
+  that read as messier than intended and was dropped) — the brief called
+  this "the same fashion as the title," which for a card without a second
+  word to underline reads as this spring-driven drop rather than literally
+  reusing the slide-then-underline sequence.
 - **Mobile fallback**, per component: `WaveField`/`PerspectiveImage` are
   simply absent (flat static image, no tall track); `MetricsMarquee`
   exports `MetricsGridStatic` — the same 6 panels, un-duplicated, as a
@@ -223,8 +252,18 @@ out, which doesn't fit a phone's scroll budget or motion tolerance:
   trigger, not scroll-linked, works the same everywhere).
 - **Closing CTA**, same on both breakpoints: "Discover the best workout
   companion **now**" (the `now` in `accent-400`, `group`/`group-hover` on
-  the enclosing `<Link to="/register">` driving the pop/glow/underline on
-  hover), revealed via a one-shot `whileInView` slide-up.
+  the enclosing `<button>` driving the pop/glow/underline on hover),
+  revealed via a one-shot `whileInView` slide-up. The button calls
+  `useLoginRedirect().startLogin()` (`auth/useLoginRedirect.js`) directly —
+  not a `<Link>` to a form page — landing straight on Auth0's hosted login.
+  Because this CTA is the page's own login/signup entry point, App.jsx also
+  drops its header "Log in" button specifically on this route (`isLanding`)
+  to avoid a redundant second one; "Sign up" stays in the header everywhere
+  (including here), now also wired straight to Auth0
+  (`startSignup()` — `screen_hint: 'signup'`) instead of linking to a
+  `/register` form page. `SignIn.jsx`'s "Create one" does the same. Nothing
+  links to a signup form anymore, so that page (`Register.jsx`) was
+  deleted rather than left as dead code.
 
 `accent` (`tailwind.config.js` — `300` `#F0999A`, `400` `#E65659`, `500`
 `#DF2629`) is the wave/title/CTA pink; same values as

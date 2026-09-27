@@ -1,9 +1,11 @@
-import { Link, useLocation } from 'react-router-dom'
+import { useLocation } from 'react-router-dom'
 
 import { useAuth } from '../auth/AuthContext.jsx'
+import { useLoginRedirect } from '../auth/useLoginRedirect.js'
 
 export default function SignIn() {
   const { loginWithRedirect, configured } = useAuth()
+  const { startSignup, canStartAuth } = useLoginRedirect()
   const location = useLocation()
 
   // Credentials are collected on Auth0's own Universal Login page, not
@@ -59,9 +61,14 @@ export default function SignIn() {
 
         <p className="mt-5 font-rajdhani text-sm text-white/75">
           Need an account?{' '}
-          <Link to="/register" className="font-bold uppercase tracking-wide text-white hover:text-rose-200">
+          <button
+            type="button"
+            onClick={startSignup}
+            disabled={!canStartAuth}
+            className="font-bold uppercase tracking-wide text-white hover:text-rose-200 disabled:cursor-not-allowed disabled:text-white/40"
+          >
             Create one
-          </Link>
+          </button>
         </p>
       </section>
     </div>
